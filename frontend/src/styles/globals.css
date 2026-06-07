@@ -57,23 +57,11 @@ button:disabled { cursor: wait; opacity: .72; }
 }
 
 .brand {
-  display: flex;
-  align-items: center;
-  gap: 10px;
+  display: grid;
+  gap: 4px;
   min-width: 0;
   padding: 6px 6px 14px;
   border-bottom: 1px solid rgb(255 255 255 / 0.12);
-}
-
-.brand-mark {
-  width: 38px;
-  height: 28px;
-  border-radius: 4px;
-  background: var(--color-brand);
-  display: grid;
-  place-items: center;
-  font-weight: 800;
-  flex: 0 0 auto;
 }
 
 .brand h1 {
@@ -83,8 +71,17 @@ button:disabled { cursor: wait; opacity: .72; }
   letter-spacing: 0;
 }
 
+.brand span {
+  display: block;
+  margin-top: 5px;
+  color: #f4efe8;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
 .brand p {
-  margin: 3px 0 0;
+  margin: 2px 0 0;
   color: var(--color-sidebar-muted);
   font-size: 12px;
 }

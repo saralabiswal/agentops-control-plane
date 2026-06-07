@@ -933,9 +933,9 @@ export default function App() {
     <div className={`app-shell ${persona}-lens`}>
       <aside className="sidebar">
         <div className="brand">
-          <div className="brand-mark">OC</div>
           <div>
             <h1>AgentOps Control Plane</h1>
+            <span>AI Work Management Platform</span>
             <p>Author: {AUTHOR}</p>
           </div>
         </div>
