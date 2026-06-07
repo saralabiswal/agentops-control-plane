@@ -4,12 +4,11 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - run: cd backend && pip install -e ".[dev]"
       - run: cd backend && ruff check app/ tests/
       - run: cd backend && mypy app/
       - run: cd backend && pytest tests/ --cov=app --cov-fail-under=80
-
