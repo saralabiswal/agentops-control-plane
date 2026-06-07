@@ -1,0 +1,29 @@
+.DS_Store
+
+# Local planning/prototype references
+docs/planning/
+docs/ui-reference/
+
+# Backend local state
+backend/.coverage
+backend/.mypy_cache/
+backend/.pytest_cache/
+backend/.ruff_cache/
+backend/.venv/
+backend/agentops.db
+backend/__pycache__/
+backend/app/**/__pycache__/
+backend/tests/**/__pycache__/
+
+# Frontend local state
+frontend/dist/
+frontend/node_modules/
+frontend/tsconfig.tsbuildinfo
+
+# Python and Node caches
+*.pyc
+*.pyo
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
