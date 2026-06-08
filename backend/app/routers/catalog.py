@@ -1,5 +1,3 @@
-from typing import cast
-
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -22,10 +20,10 @@ async def list_agents(db: AsyncSession = Depends(get_db)) -> list[AgentDefinitio
 
 @router.get("/agents/{agent_id}", response_model=AgentDefinitionSchema)
 async def get_agent(agent_id: str, db: AsyncSession = Depends(get_db)) -> AgentDefinition:
-    agent = await db.get(AgentDefinition, agent_id)
+    agent: AgentDefinition | None = await db.get(AgentDefinition, agent_id)
     if agent is None:
         raise HTTPException(status_code=404, detail="Agent not found")
-    return cast(AgentDefinition, agent)
+    return agent
 
 
 @router.get("/pricing", response_model=list[ModelPricingSchema])

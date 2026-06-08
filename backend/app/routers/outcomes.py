@@ -1,5 +1,3 @@
-from typing import cast
-
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -48,7 +46,9 @@ async def get_outcome_summary(db: AsyncSession = Depends(get_db)) -> OutcomeSumm
 
 @router.get("/outcomes/{run_id}", response_model=BusinessOutcomeSchema)
 async def get_outcome(run_id: str, db: AsyncSession = Depends(get_db)) -> BusinessOutcome:
-    outcome = await db.scalar(select(BusinessOutcome).where(BusinessOutcome.agent_run_id == run_id))
+    outcome: BusinessOutcome | None = await db.scalar(
+        select(BusinessOutcome).where(BusinessOutcome.agent_run_id == run_id)
+    )
     if outcome is None:
         raise HTTPException(status_code=404, detail="Outcome not found")
-    return cast(BusinessOutcome, outcome)
+    return outcome

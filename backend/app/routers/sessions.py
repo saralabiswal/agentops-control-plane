@@ -1,5 +1,5 @@
 from datetime import UTC, datetime
-from typing import Any, cast
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy import func, select
@@ -35,7 +35,7 @@ async def list_sessions(db: AsyncSession = Depends(get_db)) -> list[Session]:
 
 @router.get("/sessions/{session_id}", response_model=SessionDetailSchema)
 async def get_session(session_id: str, db: AsyncSession = Depends(get_db)) -> dict[str, Any]:
-    session = await db.get(Session, session_id)
+    session: Session | None = await db.get(Session, session_id)
     if session is None:
         raise HTTPException(status_code=404, detail="Session not found")
     tasks = await db.scalars(select(Task).where(Task.session_id == session_id))
@@ -76,5 +76,7 @@ async def close_session(session_id: str, db: AsyncSession = Depends(get_db)) -> 
     session.success_rate = float(successful or 0) / max(session.total_tasks, 1)
     session.avg_quality_score = float(avg_quality or 0)
     await db.commit()
-    await db.refresh(session)
-    return cast(Session, session)
+    refreshed_session: Session | None = await db.get(Session, session_id)
+    if refreshed_session is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return refreshed_session
