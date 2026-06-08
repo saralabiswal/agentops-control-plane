@@ -165,6 +165,34 @@ def workflow_responses_with_task_epics_and_nested_assignment_results():
     ]
 
 
+def workflow_responses_with_repaired_risk_json():
+    responses = workflow_responses()
+    responses[2] = llm_response(
+        '{"risk_register":[{"id":"R-1","title":"Security evidence",'
+        '"description":"Risk","severity":8,"likelihood":6,'
+        '"mitigation":"Use existing evidence package","owner":"Asha Rao",'
+        '"deadline":"Week 2"}],"overall_risk_level":4,"delivery_confidence":70'
+    )
+    return responses
+
+
+def workflow_responses_with_repaired_capacity_json():
+    responses = workflow_responses()
+    responses[1] = llm_response(
+        '{'
+        '"team_capacity":{"total_capacity":340,"available_capacity":250},'
+        '"overloaded_members":[{"name":"Mateo Cruz","load":29}],'
+        '"skill_gaps":['
+        '{"name":"Asha Rao",["identity","release"]},'
+        '{"name":"Devon Shah",["security"]}'
+        '],'
+        '"capacity_risk_level":"Moderate",'
+        '"capacity_notes":"Mateo Cruz is overloaded."'
+        '}'
+    )
+    return responses
+
+
 @pytest.mark.asyncio
 async def test_project_planning_workflow_creates_parent_and_child_runs() -> None:
     llm = FakeLLM(workflow_responses())
@@ -314,6 +342,108 @@ async def test_project_planning_workflow_accepts_tasks_and_nested_assignment_res
     assert parent[0].output_payload["project_title"] == "Orion Recovery"
     assert "Integrate payload" in llm.prompts[3]
     assert "Stories to assign: []" not in llm.prompts[3]
+
+
+@pytest.mark.asyncio
+async def test_project_planning_workflow_repairs_risk_node_json() -> None:
+    llm = FakeLLM(workflow_responses_with_repaired_risk_json())
+    sse = SSEEmitter()
+    manager = AgentOpsManager(sse, QualityQueue(sse), CostCalculator())
+    planning_agent = ProjectPlanningAgent(llm, manager)
+
+    async with AsyncSessionLocal() as db:
+        session = Session(name="Workflow Repaired Risk JSON Test")
+        agent = await db.get(AgentDefinition, "agent-project-planning")
+        pricing = await db.get(ModelPricing, "price-ollama-llama32-3b")
+        assert agent is not None
+        assert pricing is not None
+        task = Task(
+            session=session,
+            agent_id=agent.id,
+            domain=agent.domain,
+            task_type=agent.agent_type,
+            input_payload={
+                "instruction": "Plan Orion recovery",
+                "team_members": [
+                    {
+                        "name": "Asha Rao",
+                        "role": "Tech Lead",
+                        "skills": ["identity", "backend", "security"],
+                        "load_pct": 70,
+                    }
+                ],
+                "timeline_weeks": 6,
+                "committed_revenue_usd": 1250000,
+            },
+        )
+        db.add_all([session, task])
+        await db.commit()
+        await db.refresh(task)
+
+    await planning_agent.run(task, pricing.id)
+
+    async with AsyncSessionLocal() as db:
+        runs = list(await db.scalars(select(AgentRun).where(AgentRun.task_id == task.id)))
+
+    parent = [run for run in runs if run.run_type == "WORKFLOW_PARENT"]
+    risk_node = [run for run in runs if run.agent_id == "node_risk_assess"]
+    assert len(parent) == 1
+    assert len(risk_node) == 1
+    assert parent[0].status == "COMPLETE"
+    assert risk_node[0].status == "COMPLETE"
+
+
+@pytest.mark.asyncio
+async def test_project_planning_workflow_repairs_capacity_keyless_skill_arrays() -> None:
+    llm = FakeLLM(workflow_responses_with_repaired_capacity_json())
+    sse = SSEEmitter()
+    manager = AgentOpsManager(sse, QualityQueue(sse), CostCalculator())
+    planning_agent = ProjectPlanningAgent(llm, manager)
+
+    async with AsyncSessionLocal() as db:
+        session = Session(name="Workflow Repaired Capacity JSON Test")
+        agent = await db.get(AgentDefinition, "agent-project-planning")
+        pricing = await db.get(ModelPricing, "price-ollama-llama32-3b")
+        assert agent is not None
+        assert pricing is not None
+        task = Task(
+            session=session,
+            agent_id=agent.id,
+            domain=agent.domain,
+            task_type=agent.agent_type,
+            input_payload={
+                "instruction": "Plan Orion recovery",
+                "team_members": [
+                    {
+                        "name": "Asha Rao",
+                        "role": "Tech Lead",
+                        "skills": ["identity", "backend", "security"],
+                        "load_pct": 70,
+                    }
+                ],
+                "timeline_weeks": 6,
+                "committed_revenue_usd": 1250000,
+            },
+        )
+        db.add_all([session, task])
+        await db.commit()
+        await db.refresh(task)
+
+    await planning_agent.run(task, pricing.id)
+
+    async with AsyncSessionLocal() as db:
+        runs = list(await db.scalars(select(AgentRun).where(AgentRun.task_id == task.id)))
+
+    parent = [run for run in runs if run.run_type == "WORKFLOW_PARENT"]
+    capacity_node = [run for run in runs if run.agent_id == "node_capacity_check"]
+    assert len(parent) == 1
+    assert len(capacity_node) == 1
+    assert parent[0].status == "COMPLETE"
+    assert capacity_node[0].status == "COMPLETE"
+    assert capacity_node[0].output_payload["skill_gaps"][0]["missing_skills"] == [
+        "identity",
+        "release",
+    ]
 
 
 @pytest.mark.asyncio

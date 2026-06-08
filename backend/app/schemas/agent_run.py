@@ -26,6 +26,9 @@ class ModelPricingSchema(BaseModel):
     model_name: str
     input_cost_per_1k: float
     output_cost_per_1k: float
+    api_call_cost_per_1k: float
+    compute_vcpu_cost_per_second: float
+    compute_memory_gib_cost_per_second: float
     effective_from: datetime
     effective_to: datetime | None
 

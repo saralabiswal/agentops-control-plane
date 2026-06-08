@@ -1,4 +1,14 @@
-import type { AgentDefinition, AgentRun, BusinessOutcome, ModelPricing, Session, Task, TaskSubmit } from './types'
+import type {
+  AgentDefinition,
+  AgentRun,
+  BusinessOutcome,
+  ModelPricing,
+  RuntimeSettings,
+  RuntimeSettingsUpdate,
+  Session,
+  Task,
+  TaskSubmit,
+} from './types'
 
 const BASE = '/api/v1'
 const REQUEST_TIMEOUT_MS = 15000
@@ -12,7 +22,16 @@ async function req<T>(path: string, init?: RequestInit): Promise<T> {
       ...init,
       signal: init?.signal ?? controller.signal,
     })
-    if (!res.ok) throw new Error(`${res.status} ${res.statusText}`)
+    if (!res.ok) {
+      let detail = ''
+      try {
+        const body = await res.json() as { detail?: string }
+        detail = body.detail ? `: ${body.detail}` : ''
+      } catch {
+        detail = ''
+      }
+      throw new Error(`${res.status} ${res.statusText}${detail}`)
+    }
     return res.json() as Promise<T>
   } catch (error) {
     if (error instanceof DOMException && error.name === 'AbortError') {
@@ -58,5 +77,13 @@ export const api = {
   },
   pricing: {
     list: () => req<ModelPricing[]>('/pricing'),
+  },
+  settings: {
+    runtime: () => req<RuntimeSettings>('/settings/runtime'),
+    updateRuntime: (payload: RuntimeSettingsUpdate) =>
+      req<RuntimeSettings>('/settings/runtime', {
+        method: 'PATCH',
+        body: JSON.stringify(payload),
+      }),
   },
 }

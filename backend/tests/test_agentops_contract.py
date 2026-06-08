@@ -1,13 +1,30 @@
+from datetime import UTC, datetime
+
 import pytest
 from sqlalchemy import func, select
 
-from app.agentops.manager import recover_stale_runs
+from app.agentops.context import RunContext
+from app.agentops.cost_calculator import (
+    API_CALLS_PER_AGENT_RUN,
+    COMPUTE_MEMORY_GIB_PER_AGENT_RUN,
+    COMPUTE_VCPU_PER_AGENT_RUN,
+    CostCalculator,
+)
+from app.agentops.manager import AgentOpsManager, recover_stale_runs
+from app.agentops.quality_queue import QualityQueue
+from app.agentops.sse_emitter import SSEEmitter
 from app.core.database import AsyncSessionLocal
-from app.core.enums import RunStatus
+from app.core.enums import RunStatus, RunType, TaskStatus
 from app.llm.base import LLMConfigurationError
 from app.models.agent_run import AgentRun
 from app.models.metric import Metric
 from app.models.model_pricing import ModelPricing
+from app.models.task import Task
+
+
+class FailingOutcomeWriter:
+    async def write_for_run(self, db, ctx) -> None:
+        raise TypeError("bad outcome payload")
 
 
 @pytest.mark.asyncio
@@ -55,6 +72,39 @@ async def test_finally_runs_on_success_and_writes_metrics(agentops, session_task
     assert run.total_tokens == 15
     assert metric_count == 4
     assert agentops.quality.queue.qsize() == 1
+
+
+@pytest.mark.asyncio
+async def test_outcome_write_failure_marks_run_and_task_failed(session_task) -> None:
+    session, task, agent, pricing = session_task
+    sse = SSEEmitter()
+    manager = AgentOpsManager(
+        sse,
+        QualityQueue(sse),
+        CostCalculator(),
+        outcome_calculator=FailingOutcomeWriter(),
+    )
+
+    async with manager.run_context(
+        task_id=task.id,
+        agent_id=agent.id,
+        session_id=session.id,
+        model_used="llama3.2:3b",
+        model_pricing_id=pricing.id,
+    ) as ctx:
+        ctx.output_payload = {"risk_score": 0.25}
+
+    async with AsyncSessionLocal() as db:
+        run = await db.get(AgentRun, ctx.run_id)
+        persisted_task = await db.get(Task, task.id)
+
+    assert run is not None
+    assert run.status == RunStatus.FAILED
+    assert run.error_message is not None
+    assert "Outcome calculation failed" in run.error_message
+    assert persisted_task is not None
+    assert persisted_task.status == TaskStatus.FAILED
+    assert manager.quality.queue.qsize() == 0
 
 
 @pytest.mark.asyncio
@@ -148,6 +198,48 @@ async def test_cost_calculated_from_locked_pricing(agentops, session_task, db_se
         run = await db.get(AgentRun, ctx.run_id)
     assert run is not None
     assert run.cost_usd == pytest.approx(2.0)
+
+
+@pytest.mark.asyncio
+async def test_cost_calculator_includes_api_calls_and_compute(db_session) -> None:
+    pricing = ModelPricing(
+        id="price-operational",
+        provider="ollama",
+        model_name="priced-model",
+        input_cost_per_1k=1.0,
+        output_cost_per_1k=2.0,
+        api_call_cost_per_1k=10.0,
+        compute_vcpu_cost_per_second=0.5,
+        compute_memory_gib_cost_per_second=0.25,
+    )
+    db_session.add(pricing)
+    await db_session.commit()
+
+    ctx = RunContext(
+        run_id="run-operational",
+        task_id="task-operational",
+        agent_id="agent-sprint-risk",
+        session_id="session-operational",
+        started_at=datetime.now(UTC),
+        model_used="priced-model",
+        model_pricing_id=pricing.id,
+        run_type=RunType.SINGLE_SHOT,
+        prompt_tokens=1000,
+        completion_tokens=500,
+        latency_ms=2000,
+    )
+
+    cost = await CostCalculator().calculate(db_session, ctx)
+    expected_token_cost = 2.0
+    expected_api_cost = API_CALLS_PER_AGENT_RUN / 1000 * pricing.api_call_cost_per_1k
+    expected_compute_cost = 2.0 * (
+        COMPUTE_VCPU_PER_AGENT_RUN * pricing.compute_vcpu_cost_per_second
+        + COMPUTE_MEMORY_GIB_PER_AGENT_RUN * pricing.compute_memory_gib_cost_per_second
+    )
+
+    assert cost == pytest.approx(
+        expected_token_cost + expected_api_cost + expected_compute_cost
+    )
 
 
 @pytest.mark.asyncio

@@ -16,8 +16,31 @@ export type ModelPricing = {
   model_name: string
   input_cost_per_1k: number
   output_cost_per_1k: number
+  api_call_cost_per_1k: number
+  compute_vcpu_cost_per_second: number
+  compute_memory_gib_cost_per_second: number
   effective_from: string
   effective_to: string | null
+}
+
+export type RuntimeProvider = {
+  provider: 'ollama' | 'groq' | 'gemini'
+  label: string
+  configured: boolean
+  active_model: string
+  models: string[]
+  next_action: string
+}
+
+export type RuntimeSettings = {
+  active_provider: 'ollama' | 'groq' | 'gemini'
+  active_model: string
+  providers: RuntimeProvider[]
+}
+
+export type RuntimeSettingsUpdate = {
+  active_provider: 'ollama' | 'groq' | 'gemini'
+  model_name: string
 }
 
 export type Session = {
@@ -54,9 +77,13 @@ export type BusinessOutcome = {
   task_id: string
   agent_run_id: string
   domain: string
+  outcome_type: string
   metric_name: string
+  metric_value: number
+  metric_unit: string
   financial_impact_usd: number
   confidence_score: number
+  computed_at: string
 }
 
 export type TaskSubmit = {

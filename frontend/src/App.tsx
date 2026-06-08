@@ -18,14 +18,27 @@ import {
 import type { LucideIcon } from 'lucide-react'
 
 import { api } from './api/client'
-import type { AgentRun, BusinessOutcome, ModelPricing, Persona, Session, TaskSubmit } from './api/types'
+import type {
+  AgentRun,
+  BusinessOutcome,
+  ModelPricing,
+  Persona,
+  RuntimeSettings,
+  RuntimeProvider,
+  Session,
+  TaskSubmit,
+} from './api/types'
 import { useSSE } from './hooks/useSSE'
 import { useSession } from './hooks/useSession'
 
 const AUTHOR = 'Sarala Biswal'
+const API_CALLS_PER_AGENT_RUN = 4
+const COMPUTE_VCPU_PER_AGENT_RUN = 1
+const COMPUTE_MEMORY_GIB_PER_AGENT_RUN = 0.5
 
 type RunScope = 'platform' | 'project' | 'revenue'
-type ViewId = 'business' | 'outcomes' | 'operations' | 'architecture' | 'settings'
+type ViewId = 'story' | 'outcomes' | 'run' | 'evidence' | 'architecture' | 'settings' | 'backlog'
+type ProviderKey = 'ollama' | 'groq' | 'gemini'
 
 type AgentKey =
   | 'agent-sprint-risk'
@@ -65,6 +78,8 @@ type ActiveRun = {
   label: string
   agentIds: AgentKey[]
   taskIds: string[]
+  payloads: Partial<Record<AgentKey, Record<string, unknown>>>
+  scenarioTitles: Partial<Record<AgentConfig['domain'], string>>
   startedAt: number
 }
 
@@ -84,6 +99,43 @@ type RunProgress = {
   total: number
 }
 
+type EvidenceDomain = 'PROJECT_DELIVERY' | 'REVENUE_OPS' | 'PLATFORM'
+
+type EvidenceRunGroup =
+  | {
+      kind: 'run'
+      run: AgentRun
+    }
+  | {
+      kind: 'workflow'
+      parent: AgentRun
+      nodes: AgentRun[]
+    }
+
+type EvidenceGroup = {
+  kind: 'domain'
+  domain: EvidenceDomain
+  label: string
+  items: EvidenceRunGroup[]
+}
+
+type PayloadPreviewGroup = {
+  domain: AgentConfig['domain']
+  label: string
+  scenarioTitle: string
+  items: Array<{
+    agent: AgentConfig
+    payload: Record<string, unknown>
+  }>
+}
+
+type ProviderConfig = {
+  id: ProviderKey
+  label: string
+  description: string
+  nextAction: string
+}
+
 const projectAgents: AgentKey[] = [
   'agent-sprint-risk',
   'agent-resource-alloc',
@@ -97,6 +149,35 @@ const revenueAgents: AgentKey[] = [
   'agent-pipeline-forecast',
 ]
 
+const providerCatalog: Record<ProviderKey, ProviderConfig> = {
+  ollama: {
+    id: 'ollama',
+    label: 'Ollama',
+    description: 'Local default provider for the demo and development runtime.',
+    nextAction: 'Run a platform or domain demo locally with priced token accounting.',
+  },
+  groq: {
+    id: 'groq',
+    label: 'Groq',
+    description: 'Cloud provider adapter available when AGENTOPS_GROQ_API_KEY is configured.',
+    nextAction: 'Add the Groq API key in backend/.env before using this provider for live runs.',
+  },
+  gemini: {
+    id: 'gemini',
+    label: 'Gemini',
+    description: 'Google Gemini adapter available when AGENTOPS_GEMINI_API_KEY is configured.',
+    nextAction: 'Add the Gemini API key in backend/.env before using this provider for live runs.',
+  },
+}
+
+const providerOrder: ProviderKey[] = ['ollama', 'groq', 'gemini']
+
+const fallbackModelsByProvider: Record<ProviderKey, string[]> = {
+  ollama: ['llama3.2:3b', 'llama3.2:latest', 'llama3.1:8b', 'llama3.1:latest'],
+  groq: ['llama-3.3-70b-versatile'],
+  gemini: ['gemini-2.0-flash'],
+}
+
 const agentCatalog: Record<AgentKey, AgentConfig> = {
   'agent-sprint-risk': {
     id: 'agent-sprint-risk',
@@ -105,15 +186,21 @@ const agentCatalog: Record<AgentKey, AgentConfig> = {
     shortDomain: 'Project Management',
     description: 'Assesses sprint risk, delivery confidence, and mitigations.',
     payload: {
-      sprint_name: 'Orion v4.2',
-      team_size: 6,
-      days_remaining: 8,
-      total_tasks: 22,
-      completed_tasks: 11,
-      velocity_history: [18, 20, 15],
-      external_dependencies: ['Vendor API cert renewal'],
-      capacity_notes: 'Two engineers at 80% load due to on-call rotation',
-      delay_cost_per_week_usd: 75000,
+      sprint_name: 'Orion v4.2 Launch Readiness',
+      customer: 'FirstWest Bank',
+      business_context: 'Mobile onboarding launch tied to contracted digital account opening revenue.',
+      team_size: 7,
+      days_remaining: 9,
+      total_tasks: 31,
+      completed_tasks: 14,
+      velocity_history: [21, 19, 16],
+      external_dependencies: [
+        'Identity provider production certificate',
+        'Fraud-service rate limit approval',
+        'Security exception sign-off',
+      ],
+      capacity_notes: 'Tech lead is at 60% due to Sev-2 support; QA lead is split with release audit.',
+      delay_cost_per_week_usd: 185000,
     },
   },
   'agent-resource-alloc': {
@@ -124,19 +211,21 @@ const agentCatalog: Record<AgentKey, AgentConfig> = {
     description: 'Optimizes task-to-person assignment across skills and capacity.',
     payload: {
       tasks: [
-        { id: 'API-42', skill: 'backend', estimate_hours: 18, priority: 'HIGH' },
-        { id: 'UI-19', skill: 'frontend', estimate_hours: 14, priority: 'HIGH' },
-        { id: 'QA-07', skill: 'quality', estimate_hours: 10, priority: 'NORMAL' },
-        { id: 'SEC-11', skill: 'security', estimate_hours: 12, priority: 'HIGH' },
+        { id: 'OIDC-214', skill: 'identity', estimate_hours: 24, priority: 'HIGH' },
+        { id: 'FRAUD-88', skill: 'backend', estimate_hours: 28, priority: 'HIGH' },
+        { id: 'SEC-72', skill: 'security', estimate_hours: 18, priority: 'HIGH' },
+        { id: 'QA-140', skill: 'quality', estimate_hours: 20, priority: 'HIGH' },
+        { id: 'REL-31', skill: 'release', estimate_hours: 12, priority: 'NORMAL' },
       ],
       team_members: [
-        { name: 'Asha', skills: ['backend', 'security'], load_pct: 80 },
-        { name: 'Mateo', skills: ['frontend', 'quality'], load_pct: 55 },
-        { name: 'Lina', skills: ['backend', 'quality'], load_pct: 70 },
+        { name: 'Asha Rao', skills: ['identity', 'backend', 'security'], load_pct: 82 },
+        { name: 'Mateo Cruz', skills: ['backend', 'release'], load_pct: 68 },
+        { name: 'Lina Park', skills: ['quality', 'automation', 'security'], load_pct: 76 },
+        { name: 'Devon Shah', skills: ['release', 'observability', 'backend'], load_pct: 55 },
       ],
-      sprint_weeks: 2,
-      avg_task_hours: 12,
-      hourly_rate: 140,
+      sprint_weeks: 3,
+      avg_task_hours: 20,
+      hourly_rate: 165,
     },
   },
   'agent-delivery-forecast': {
@@ -146,15 +235,18 @@ const agentCatalog: Record<AgentKey, AgentConfig> = {
     shortDomain: 'Project Management',
     description: 'Forecasts milestone confidence and delivery-linked revenue exposure.',
     payload: {
-      milestone_name: 'Orion v4.2 customer launch',
-      committed_revenue_usd: 820000,
-      target_date: '2026-07-15',
-      current_date: '2026-06-06',
-      backlog_count: 31,
-      avg_velocity: 16,
+      milestone_name: 'Orion v4.2 FirstWest Bank launch',
+      committed_revenue_usd: 1250000,
+      target_date: '2026-07-18',
+      current_date: '2026-06-07',
+      backlog_count: 42,
+      avg_velocity: 17,
       sprint_length_days: 14,
-      blockers: ['Vendor API certificate renewal', 'Security review queue'],
-      capacity_changes: 'Two engineers on partial on-call rotation',
+      blockers: [
+        'Fraud-service performance test has not passed at target volume',
+        'Final SOC2 evidence package is missing two controls',
+      ],
+      capacity_changes: 'Two engineers are covering production support until June 14.',
     },
   },
   'agent-project-planning': {
@@ -165,14 +257,15 @@ const agentCatalog: Record<AgentKey, AgentConfig> = {
     description: 'Runs the 5-node planning workflow from instruction to full plan.',
     payload: {
       instruction:
-        'Create a recovery plan for Orion v4.2 launch readiness, including epics, risks, owners, and executive summary.',
+        'Create a recovery plan for Orion v4.2 launch readiness with epics for identity, fraud-service readiness, security evidence, QA automation, owners, risk tradeoffs, and executive decision points.',
       team_members: [
-        { name: 'Asha', skills: ['backend', 'security'], availability_pct: 80 },
-        { name: 'Mateo', skills: ['frontend', 'quality'], availability_pct: 90 },
-        { name: 'Lina', skills: ['backend', 'data'], availability_pct: 75 },
+        { name: 'Asha Rao', skills: ['identity', 'backend', 'security'], availability_pct: 70 },
+        { name: 'Mateo Cruz', skills: ['backend', 'release'], availability_pct: 85 },
+        { name: 'Lina Park', skills: ['quality', 'automation', 'security'], availability_pct: 75 },
+        { name: 'Devon Shah', skills: ['release', 'observability', 'backend'], availability_pct: 90 },
       ],
       timeline_weeks: 6,
-      committed_revenue_usd: 620000,
+      committed_revenue_usd: 1250000,
     },
   },
   'agent-renewal-risk': {
@@ -184,6 +277,7 @@ const agentCatalog: Record<AgentKey, AgentConfig> = {
     payload: {
       account_name: 'Acme Financial',
       account_arr: 900000,
+      segment: 'Enterprise Financial Services',
       contract_end_date: '2026-09-30',
       days_to_renewal: 116,
       login_frequency_30d: 18,
@@ -202,14 +296,14 @@ const agentCatalog: Record<AgentKey, AgentConfig> = {
     shortDomain: 'Revenue Management',
     description: 'Detects early churn signals and intervention value.',
     payload: {
-      account_name: 'Northstar Retail',
-      account_arr: 480000,
+      account_name: 'Acme Financial',
+      account_arr: 900000,
       contract_end_date: '2026-08-31',
       days_to_renewal: 86,
-      login_trend: 'down 38% over 30 days',
-      adoption_trend: 'core workflow usage flat, analytics usage down',
+      login_trend: 'finance admin usage down 38% over 30 days',
+      adoption_trend: 'invoice automation flat, reporting exports increasing',
       ticket_sentiment: 'negative',
-      exec_engagement: 'sponsor has missed two QBRs',
+      exec_engagement: 'economic buyer missed two QBRs and delegated renewal call',
       competitor_mentions: 3,
       contract_downloads: 2,
       early_intervention_value: 0.45,
@@ -225,13 +319,37 @@ const agentCatalog: Record<AgentKey, AgentConfig> = {
       rep_name: 'Jordan Lee',
       quota_target: 1800000,
       quarter_close_date: '2026-06-30',
-      days_remaining: 24,
+      days_remaining: 23,
       historical_close_rate: 0.31,
       avg_sales_cycle_days: 52,
       pipeline_deals: [
-        { account: 'Helio Manufacturing', arr: 520000, crm_probability: 0.62, stage: 'legal' },
-        { account: 'Beacon Health', arr: 410000, crm_probability: 0.44, stage: 'security' },
-        { account: 'Koru Energy', arr: 360000, crm_probability: 0.35, stage: 'business case' },
+        {
+          account: 'Helio Manufacturing',
+          arr: 520000,
+          crm_probability: 0.62,
+          stage: 'Legal review',
+          close_plan: 'redline turnaround due Friday',
+          risk: 'procurement owner on PTO',
+          next_step: 'VP Sales to confirm signing authority',
+        },
+        {
+          account: 'Beacon Health',
+          arr: 410000,
+          crm_probability: 0.44,
+          stage: 'Security review',
+          close_plan: 'security questionnaire pending',
+          risk: 'SOC2 exception requested',
+          next_step: 'Security lead to join customer call',
+        },
+        {
+          account: 'Koru Energy',
+          arr: 360000,
+          crm_probability: 0.35,
+          stage: 'Business case',
+          close_plan: 'ROI case not signed by CFO',
+          risk: 'budget approval moved to July',
+          next_step: 'RevOps to rebuild value case with usage data',
+        },
       ],
     },
   },
@@ -247,8 +365,9 @@ const projectScenarios: DemoScenario[] = [
   {
     id: 'orion-launch',
     domain: 'project',
-    title: 'Orion v4.2 launch recovery',
-    summary: 'Vendor dependency, security queue, and partial on-call capacity put launch readiness at risk.',
+    title: 'Orion v4.2 bank launch recovery',
+    summary:
+      'FirstWest Bank launch has identity, fraud-service, and security evidence risk against $1.25M in booked delivery value.',
     payloads: {
       'agent-sprint-risk': agentCatalog['agent-sprint-risk'].payload,
       'agent-resource-alloc': agentCatalog['agent-resource-alloc'].payload,
@@ -259,114 +378,133 @@ const projectScenarios: DemoScenario[] = [
   {
     id: 'cpq-stabilization',
     domain: 'project',
-    title: 'CPQ stabilization sprint',
-    summary: 'Production pricing defects and integration fixes need a controlled delivery recovery plan.',
+    title: 'GlobalTel CPQ stabilization',
+    summary:
+      'Pricing defects are delaying enterprise renewal quotes and need a controlled recovery plan before month-end close.',
     payloads: {
       'agent-sprint-risk': {
         sprint_name: 'CPQ Stabilization 6.1',
         team_size: 5,
         days_remaining: 6,
-        total_tasks: 18,
+        total_tasks: 20,
         completed_tasks: 7,
-        velocity_history: [12, 10, 9],
-        external_dependencies: ['ERP tax service regression sign-off'],
+        velocity_history: [13, 11, 9],
+        external_dependencies: [
+          'ERP tax service regression sign-off',
+          'Discount approval matrix from Revenue Ops',
+        ],
         capacity_notes: 'Pricing architect is split across two escalations',
-        delay_cost_per_week_usd: 110000,
+        delay_cost_per_week_usd: 140000,
       },
       'agent-resource-alloc': {
         tasks: [
           { id: 'CPQ-118', skill: 'pricing', estimate_hours: 22, priority: 'HIGH' },
           { id: 'ERP-44', skill: 'integration', estimate_hours: 18, priority: 'HIGH' },
           { id: 'QA-91', skill: 'quality', estimate_hours: 16, priority: 'HIGH' },
+          { id: 'REV-27', skill: 'pricing', estimate_hours: 12, priority: 'HIGH' },
           { id: 'DOC-12', skill: 'enablement', estimate_hours: 8, priority: 'NORMAL' },
         ],
         team_members: [
-          { name: 'Priya', skills: ['pricing', 'backend'], load_pct: 85 },
-          { name: 'Noah', skills: ['integration', 'quality'], load_pct: 60 },
-          { name: 'Elena', skills: ['quality', 'enablement'], load_pct: 45 },
+          { name: 'Priya Nair', skills: ['pricing', 'backend'], load_pct: 86 },
+          { name: 'Noah Brooks', skills: ['integration', 'quality'], load_pct: 62 },
+          { name: 'Elena Rossi', skills: ['quality', 'enablement'], load_pct: 58 },
         ],
         sprint_weeks: 2,
         avg_task_hours: 16,
-        hourly_rate: 150,
+        hourly_rate: 155,
       },
       'agent-delivery-forecast': {
-        milestone_name: 'CPQ production defect burn-down',
-        committed_revenue_usd: 540000,
-        target_date: '2026-07-02',
-        current_date: '2026-06-06',
-        backlog_count: 24,
+        milestone_name: 'GlobalTel CPQ renewal quote readiness',
+        committed_revenue_usd: 780000,
+        target_date: '2026-07-03',
+        current_date: '2026-06-07',
+        backlog_count: 27,
         avg_velocity: 10,
         sprint_length_days: 14,
-        blockers: ['ERP tax service validation', 'Regression test environment instability'],
-        capacity_changes: 'Pricing architect at 60% due to escalation load',
+        blockers: [
+          'Tax-service sandbox data differs from production',
+          'Regression environment is unstable during nightly runs',
+        ],
+        capacity_changes: 'Pricing architect available 60%; QA lead available 80%',
       },
       'agent-project-planning': {
         instruction:
-          'Create a CPQ stabilization recovery plan with epics for pricing fixes, ERP validation, regression testing, owners, and executive summary.',
+          'Create a CPQ stabilization plan covering pricing defect correction, ERP tax validation, regression hardening, renewal quote readiness, owners, and executive escalation gates.',
         team_members: [
-          { name: 'Priya', skills: ['pricing', 'backend'], availability_pct: 70 },
-          { name: 'Noah', skills: ['integration', 'quality'], availability_pct: 85 },
-          { name: 'Elena', skills: ['quality', 'enablement'], availability_pct: 90 },
+          { name: 'Priya Nair', skills: ['pricing', 'backend'], availability_pct: 65 },
+          { name: 'Noah Brooks', skills: ['integration', 'quality'], availability_pct: 85 },
+          { name: 'Elena Rossi', skills: ['quality', 'enablement'], availability_pct: 80 },
         ],
         timeline_weeks: 4,
-        committed_revenue_usd: 540000,
+        committed_revenue_usd: 780000,
       },
     },
   },
   {
     id: 'atlas-migration',
     domain: 'project',
-    title: 'Atlas cloud migration',
-    summary: 'Migration cutover has capacity pressure, platform dependencies, and customer launch exposure.',
+    title: 'Summit Energy cloud cutover',
+    summary:
+      'Atlas migration cutover has replication, DR, and platform capacity pressure against $1.35M in contracted launch value.',
     payloads: {
       'agent-sprint-risk': {
         sprint_name: 'Atlas Migration Cutover',
-        team_size: 7,
-        days_remaining: 10,
-        total_tasks: 30,
-        completed_tasks: 12,
-        velocity_history: [20, 17, 14],
-        external_dependencies: ['Network allowlist approval', 'Database replication window'],
+        team_size: 8,
+        days_remaining: 11,
+        total_tasks: 34,
+        completed_tasks: 13,
+        velocity_history: [22, 18, 15],
+        external_dependencies: [
+          'Network allowlist approval',
+          'Database replication freeze window',
+          'Customer DR test window',
+        ],
         capacity_notes: 'Two platform engineers are on incident rotation',
-        delay_cost_per_week_usd: 135000,
+        delay_cost_per_week_usd: 210000,
       },
       'agent-resource-alloc': {
         tasks: [
           { id: 'NET-31', skill: 'network', estimate_hours: 20, priority: 'HIGH' },
-          { id: 'DB-82', skill: 'database', estimate_hours: 24, priority: 'HIGH' },
+          { id: 'DB-82', skill: 'database', estimate_hours: 26, priority: 'HIGH' },
           { id: 'CUT-17', skill: 'platform', estimate_hours: 18, priority: 'HIGH' },
+          { id: 'DR-22', skill: 'reliability', estimate_hours: 20, priority: 'HIGH' },
           { id: 'OBS-09', skill: 'observability', estimate_hours: 12, priority: 'NORMAL' },
         ],
         team_members: [
-          { name: 'Ravi', skills: ['platform', 'observability'], load_pct: 75 },
-          { name: 'Mina', skills: ['database', 'backend'], load_pct: 65 },
-          { name: 'Omar', skills: ['network', 'platform'], load_pct: 80 },
+          { name: 'Ravi Iyer', skills: ['platform', 'observability', 'reliability'], load_pct: 78 },
+          { name: 'Mina Chen', skills: ['database', 'backend'], load_pct: 66 },
+          { name: 'Omar Haddad', skills: ['network', 'platform'], load_pct: 82 },
+          { name: 'Grace Lee', skills: ['reliability', 'observability'], load_pct: 58 },
         ],
         sprint_weeks: 3,
-        avg_task_hours: 18,
-        hourly_rate: 155,
+        avg_task_hours: 19,
+        hourly_rate: 170,
       },
       'agent-delivery-forecast': {
-        milestone_name: 'Atlas migration customer cutover',
-        committed_revenue_usd: 760000,
+        milestone_name: 'Summit Energy Atlas migration cutover',
+        committed_revenue_usd: 1350000,
         target_date: '2026-07-26',
-        current_date: '2026-06-06',
-        backlog_count: 38,
+        current_date: '2026-06-07',
+        backlog_count: 45,
         avg_velocity: 16,
         sprint_length_days: 14,
-        blockers: ['Network allowlist approval', 'Database replication dry run'],
+        blockers: [
+          'Database replication dry run has not met RPO',
+          'Customer DR test window is not confirmed',
+        ],
         capacity_changes: 'Platform team has two engineers on incident rotation',
       },
       'agent-project-planning': {
         instruction:
-          'Build an Atlas migration cutover plan with epics for network readiness, data migration, platform validation, rollback plan, and executive decision points.',
+          'Build an Atlas migration cutover plan with epics for network readiness, database replication, DR validation, observability, rollback criteria, owners, and executive decision points.',
         team_members: [
-          { name: 'Ravi', skills: ['platform', 'observability'], availability_pct: 80 },
-          { name: 'Mina', skills: ['database', 'backend'], availability_pct: 85 },
-          { name: 'Omar', skills: ['network', 'platform'], availability_pct: 70 },
+          { name: 'Ravi Iyer', skills: ['platform', 'observability', 'reliability'], availability_pct: 75 },
+          { name: 'Mina Chen', skills: ['database', 'backend'], availability_pct: 85 },
+          { name: 'Omar Haddad', skills: ['network', 'platform'], availability_pct: 70 },
+          { name: 'Grace Lee', skills: ['reliability', 'observability'], availability_pct: 90 },
         ],
         timeline_weeks: 7,
-        committed_revenue_usd: 760000,
+        committed_revenue_usd: 1350000,
       },
     },
   },
@@ -374,10 +512,11 @@ const projectScenarios: DemoScenario[] = [
 
 const revenueScenarios: DemoScenario[] = [
   {
-    id: 'acme-northstar-q2',
+    id: 'acme-q2-save-motion',
     domain: 'revenue',
     title: 'Q2 revenue save motion',
-    summary: 'Renewal, churn, and late-quarter pipeline signals are consolidated for sales leadership.',
+    summary:
+      'Acme renewal risk, early churn behavior, and late-quarter pipeline are consolidated for the CRO forecast call.',
     payloads: {
       'agent-renewal-risk': agentCatalog['agent-renewal-risk'].payload,
       'agent-churn-signal': agentCatalog['agent-churn-signal'].payload,
@@ -388,11 +527,13 @@ const revenueScenarios: DemoScenario[] = [
     id: 'meridian-fortis-renewals',
     domain: 'revenue',
     title: 'Meridian and Fortis renewal risk',
-    summary: 'Healthcare renewal is stable, logistics account is showing declining adoption and ticket pressure.',
+    summary:
+      'Stable healthcare renewal can be protected while logistics churn risk needs an executive save play.',
     payloads: {
       'agent-renewal-risk': {
         account_name: 'Meridian Healthcare',
         account_arr: 840000,
+        segment: 'Enterprise Healthcare',
         contract_end_date: '2026-09-30',
         days_to_renewal: 117,
         login_frequency_30d: 42,
@@ -409,7 +550,7 @@ const revenueScenarios: DemoScenario[] = [
         contract_end_date: '2026-08-15',
         days_to_renewal: 71,
         login_trend: 'declining 62% over 60 days',
-        adoption_trend: 'stalled - no new features activated in 45 days',
+        adoption_trend: 'dispatch automation stalled; no new features activated in 45 days',
         ticket_sentiment: 'negative',
         exec_engagement: 'economic buyer has not attended the last two check-ins',
         competitor_mentions: 2,
@@ -418,14 +559,39 @@ const revenueScenarios: DemoScenario[] = [
       },
       'agent-pipeline-forecast': {
         rep_name: 'Sarah Chen',
-        quota_target: 500000,
+        quota_target: 1250000,
         quarter_close_date: '2026-06-30',
-        days_remaining: 26,
-        historical_close_rate: 0.62,
+        days_remaining: 23,
+        historical_close_rate: 0.54,
         avg_sales_cycle_days: 45,
         pipeline_deals: [
-          { account: 'Meridian Healthcare', arr: 84000, crm_probability: 0.85, stage: 'Negotiation' },
-          { account: 'Fortis Logistics', arr: 62000, crm_probability: 0.45, stage: 'Proposal Sent' },
+          {
+            account: 'Meridian Healthcare',
+            arr: 640000,
+            crm_probability: 0.82,
+            stage: 'Negotiation',
+            close_plan: 'legal addendum with customer counsel',
+            risk: 'data processing addendum open',
+            next_step: 'legal team to complete DPA edits',
+          },
+          {
+            account: 'Fortis Logistics',
+            arr: 310000,
+            crm_probability: 0.42,
+            stage: 'Proposal sent',
+            close_plan: 'revised pricing proposal requested',
+            risk: 'buyer is comparing logistics workflow competitor',
+            next_step: 'CSM and AE to run adoption recovery workshop',
+          },
+          {
+            account: 'UrbanCare Clinics',
+            arr: 280000,
+            crm_probability: 0.48,
+            stage: 'Business case',
+            close_plan: 'clinical ROI case due next week',
+            risk: 'CFO has not approved implementation budget',
+            next_step: 'RevOps to provide benchmark ROI model',
+          },
         ],
       },
     },
@@ -434,11 +600,13 @@ const revenueScenarios: DemoScenario[] = [
     id: 'enterprise-west-pipeline',
     domain: 'revenue',
     title: 'Enterprise West pipeline recovery',
-    summary: 'Large expansion and renewal motions need focus before quarter close.',
+    summary:
+      'Large expansion and renewal motions need account-level focus before quarter close.',
     payloads: {
       'agent-renewal-risk': {
         account_name: 'Apex Industrial',
         account_arr: 1250000,
+        segment: 'Enterprise Manufacturing',
         contract_end_date: '2026-10-15',
         days_to_renewal: 131,
         login_frequency_30d: 21,
@@ -466,13 +634,37 @@ const revenueScenarios: DemoScenario[] = [
         rep_name: 'Maya Singh',
         quota_target: 2200000,
         quarter_close_date: '2026-06-30',
-        days_remaining: 24,
+        days_remaining: 23,
         historical_close_rate: 0.28,
         avg_sales_cycle_days: 58,
         pipeline_deals: [
-          { account: 'Apex Industrial', arr: 720000, crm_probability: 0.52, stage: 'legal' },
-          { account: 'Beacon Health', arr: 640000, crm_probability: 0.39, stage: 'security' },
-          { account: 'Lumina Retail', arr: 380000, crm_probability: 0.31, stage: 'business case' },
+          {
+            account: 'Apex Industrial',
+            arr: 720000,
+            crm_probability: 0.52,
+            stage: 'Legal review',
+            close_plan: 'master services agreement in redlines',
+            risk: 'indemnity clause blocked by legal',
+            next_step: 'CRO to approve fallback liability position',
+          },
+          {
+            account: 'Beacon Health',
+            arr: 640000,
+            crm_probability: 0.39,
+            stage: 'Security review',
+            close_plan: 'security evidence package requested',
+            risk: 'customer CISO asked for pen-test evidence',
+            next_step: 'Security team to join executive sponsor call',
+          },
+          {
+            account: 'Lumina Retail',
+            arr: 380000,
+            crm_probability: 0.31,
+            stage: 'Business case',
+            close_plan: 'store operations ROI review',
+            risk: 'rollout budget shifted to next quarter',
+            next_step: 'AE to narrow scope to top 40 stores',
+          },
         ],
       },
     },
@@ -483,112 +675,392 @@ const scopeCopy: Record<
   RunScope,
   {
     label: string
-    title: string
-    impact: string
-    impactSubtext: string
-    story: string
-    savedTitle: string
-    savedCopy: string
-    nextTitle: string
-    nextCopy: string
     runTitle: string
     runCopy: string
     demoCopy: string
-    breakdown: [string, string][]
   }
 > = {
   platform: {
     label: 'Complete Platform',
-    title: 'Complete platform run converted delivery and revenue risk into $1.42M protected value',
-    impact: '$1.42M',
-    impactSubtext: 'protected value',
-    story:
-      'The run found one project delivery exposure, two renewal risks, and late-quarter pipeline gaps. AgentOps grouped the evidence into a CFO-readable outcome ledger with owners, mitigations, and next actions.',
-    savedTitle: '$1.42M protected',
-    savedCopy:
-      'Savings are stored in the outcome ledger by domain, agent, run, confidence score, and source evidence.',
-    nextTitle: 'Approve cross-domain recovery plan',
-    nextCopy:
-      'Business users see the summary and owners. Technical users can inspect trace, quality, prompt, response, and cost detail.',
     runTitle: 'Run complete platform',
     runCopy: 'Runs all 7 business agents and produces the cross-domain outcome story.',
     demoCopy:
       'Starts with a complete platform run, then walks through value protected, domain breakdown, run evidence, quality score, and trace replay.',
-    breakdown: [
-      ['Project risk avoided', '$340K'],
-      ['Renewal ARR protected', '$620K'],
-      ['Pipeline recovery focus', '$460K'],
-    ],
   },
   project: {
     label: 'Project Management',
-    title: '$340K delivery exposure moved into an owned recovery plan',
-    impact: '$340K',
-    impactSubtext: 'delivery exposure reduced',
-    story:
-      'The Project Management run identified sprint risk, capacity imbalance, milestone confidence gaps, and plan readiness issues for Orion v4.2.',
-    savedTitle: '$340K delivery risk reduced',
-    savedCopy:
-      'The outcome ledger links delivery confidence and mitigation actions back to Project Management agents and run evidence.',
-    nextTitle: 'Approve delivery recovery plan',
-    nextCopy:
-      'Business users get the executive plan. Technical users inspect the ProjectPlanning parent run and five node traces.',
     runTitle: 'Run Project Management',
     runCopy:
       'Runs the 4 delivery and planning agents for delivery risk, capacity, forecast, and plan output.',
     demoCopy:
       'Starts with delivery risk, capacity reallocation, milestone confidence, plan output, and workflow trace.',
-    breakdown: [
-      ['Launch slip exposure', '$260K'],
-      ['Capacity reallocation gain', '$55K'],
-      ['Escalation value', '$25K'],
-    ],
   },
   revenue: {
     label: 'Revenue Management',
-    title: '$1.08M revenue exposure prioritized into save and pipeline actions',
-    impact: '$1.08M',
-    impactSubtext: 'revenue protected',
-    story:
-      'The Revenue Management run identified renewal risk, churn signals, and recoverable pipeline gaps for the revenue leadership team.',
-    savedTitle: '$1.08M revenue protected',
-    savedCopy:
-      'The outcome ledger separates renewal protection, churn intervention, and pipeline recovery by agent and confidence score.',
-    nextTitle: 'Launch revenue save motion',
-    nextCopy:
-      'Business users get the account action plan. Technical users inspect payloads, model responses, quality scores, and costs.',
     runTitle: 'Run Revenue Management',
     runCopy: 'Runs the 3 revenue agents for renewal risk, churn signal, and pipeline forecast.',
     demoCopy:
       'Starts with protected ARR, churn intervention, pipeline gap recovery, account actions, and run evidence.',
-    breakdown: [
-      ['Renewal ARR protected', '$620K'],
-      ['Pipeline gap recovery', '$340K'],
-      ['Churn intervention value', '$120K'],
-    ],
   },
 }
 
-const views: Array<{ id: ViewId; label: string; group: string; icon: LucideIcon }> = [
-  { id: 'business', label: 'Business View', group: 'Business', icon: DollarSign },
-  { id: 'outcomes', label: 'Outcomes', group: 'Business', icon: BarChart3 },
-  { id: 'operations', label: 'Operations', group: 'Technical', icon: Activity },
-  { id: 'architecture', label: 'Architecture', group: 'Technical', icon: Layers3 },
-  { id: 'settings', label: 'Settings', group: 'Control', icon: Settings },
+type StoryDomainKey = 'project' | 'revenue'
+
+type DomainStorySummary = {
+  key: StoryDomainKey
+  label: string
+  agentCount: number
+  impact: number
+  cost: number
+  runCount: number
+  completeRuns: number
+  failedRuns: number
+  outcomeCount: number
+  confidence: string
+  primaryMetric: string
+  metrics: Array<[string, string]>
+}
+
+type BusinessStorySummary = {
+  title: string
+  story: string
+  impact: number
+  cost: number
+  quality: string
+  agentCount: number
+  runCount: number
+  completeRuns: number
+  failedRuns: number
+  outcomeCount: number
+  savedTitle: string
+  savedCopy: string
+  nextTitle: string
+  nextCopy: string
+  costDetail: string
+  domains: DomainStorySummary[]
+}
+
+const storyDomainConfig: Record<
+  StoryDomainKey,
+  { label: string; domain: 'PROJECT_DELIVERY' | 'REVENUE_OPS'; agentIds: AgentKey[] }
+> = {
+  project: {
+    label: 'Project Management',
+    domain: 'PROJECT_DELIVERY',
+    agentIds: projectAgents,
+  },
+  revenue: {
+    label: 'Revenue Management',
+    domain: 'REVENUE_OPS',
+    agentIds: revenueAgents,
+  },
+}
+
+const metricLabels: Record<string, string> = {
+  delivery_risk_mitigated_usd: 'Delivery risk mitigated',
+  engineering_hours_saved_usd: 'Engineering efficiency saved',
+  pipeline_confidence_gap_usd: 'Delivery confidence gap',
+  renewal_pipeline_protected_usd: 'Renewal pipeline protected',
+  churn_early_flag_value_usd: 'Churn intervention value',
+  recoverable_quota_gap_usd: 'Recoverable quota gap',
+}
+
+const outcomeMetricMetadata: Record<
+  string,
+  { owner: string; action: string; narrative: string }
+> = {
+  delivery_risk_mitigated_usd: {
+    owner: 'Delivery executive',
+    action: 'Approve mitigation plan and fund blocked dependency removal.',
+    narrative: 'Delivery exposure that can be reduced by acting on sprint risk and mitigation signals.',
+  },
+  engineering_hours_saved_usd: {
+    owner: 'PMO lead',
+    action: 'Approve resource reallocation and protect delivery capacity.',
+    narrative: 'Engineering efficiency opportunity from better assignment and capacity matching.',
+  },
+  pipeline_confidence_gap_usd: {
+    owner: 'Program sponsor',
+    action: 'Review recovery plan and decide whether to escalate launch risk.',
+    narrative: 'Committed revenue at risk because delivery confidence is below target.',
+  },
+  renewal_pipeline_protected_usd: {
+    owner: 'Revenue leadership',
+    action: 'Launch renewal save motion with CSM and account executive owners.',
+    narrative: 'Renewal ARR that can be protected through proactive save actions.',
+  },
+  churn_early_flag_value_usd: {
+    owner: 'Customer success director',
+    action: 'Start executive outreach and adoption recovery plan.',
+    narrative: 'Value at risk from early churn signals and declining engagement.',
+  },
+  recoverable_quota_gap_usd: {
+    owner: 'Sales VP',
+    action: 'Prioritize the recoverable deals and inspect negative gaps before forecast commit.',
+    narrative: 'Pipeline gap that can be recovered or must be de-risked in forecast review.',
+  },
+}
+
+function metricLabel(metricName: string) {
+  return metricLabels[metricName] ?? metricName.replace(/_/g, ' ')
+}
+
+function outcomeMetadata(metricName: string) {
+  return outcomeMetricMetadata[metricName] ?? {
+    owner: 'Business owner',
+    action: 'Review evidence and assign an owner before approving value.',
+    narrative: 'Business outcome produced by completed agent output.',
+  }
+}
+
+function storyDomainsFor(scope: RunScope): StoryDomainKey[] {
+  if (scope === 'project') return ['project']
+  if (scope === 'revenue') return ['revenue']
+  return ['project', 'revenue']
+}
+
+function agentConfigForRun(run: AgentRun) {
+  return (agentCatalog as Record<string, AgentConfig | undefined>)[run.agent_id]
+}
+
+function runBelongsToStoryDomain(run: AgentRun, domainKey: StoryDomainKey) {
+  const agent = agentConfigForRun(run)
+  return agent?.domain === storyDomainConfig[domainKey].domain
+}
+
+function outcomeBelongsToStoryDomain(outcome: BusinessOutcome, domainKey: StoryDomainKey) {
+  return outcome.domain === storyDomainConfig[domainKey].domain
+}
+
+function summarizeStoryDomain(
+  domainKey: StoryDomainKey,
+  outcomes: BusinessOutcome[],
+  runs: AgentRun[],
+): DomainStorySummary {
+  const config = storyDomainConfig[domainKey]
+  const domainOutcomes = outcomes.filter((outcome) =>
+    outcomeBelongsToStoryDomain(outcome, domainKey),
+  )
+  const domainRuns = billableRuns(runs).filter((run) =>
+    runBelongsToStoryDomain(run, domainKey),
+  )
+  const impact = domainOutcomes.reduce(
+    (sum, outcome) => sum + outcome.financial_impact_usd,
+    0,
+  )
+  const cost = domainRuns.reduce((sum, run) => sum + run.cost_usd, 0)
+  const confidenceScores = domainOutcomes.map((outcome) => outcome.confidence_score)
+  const averageConfidence = confidenceScores.length
+    ? confidenceScores.reduce((sum, score) => sum + score, 0) / confidenceScores.length
+    : null
+  const metrics = [...domainOutcomes]
+    .sort((left, right) => right.financial_impact_usd - left.financial_impact_usd)
+    .slice(0, 3)
+    .map((outcome): [string, string] => [
+      metricLabel(outcome.metric_name),
+      money(outcome.financial_impact_usd),
+    ])
+
+  return {
+    key: domainKey,
+    label: config.label,
+    agentCount: config.agentIds.length,
+    impact,
+    cost,
+    runCount: domainRuns.length,
+    completeRuns: domainRuns.filter((run) => run.status === 'COMPLETE').length,
+    failedRuns: domainRuns.filter((run) => run.status === 'FAILED').length,
+    outcomeCount: domainOutcomes.length,
+    confidence: averageConfidence === null ? 'pending' : averageConfidence.toFixed(2),
+    primaryMetric: metrics[0]?.[0] ?? 'No live financial outcome yet',
+    metrics,
+  }
+}
+
+function buildBusinessStorySummary(
+  scope: RunScope,
+  outcomes: BusinessOutcome[],
+  runs: AgentRun[],
+): BusinessStorySummary {
+  const domainKeys = storyDomainsFor(scope)
+  const domains = domainKeys.map((domain) =>
+    summarizeStoryDomain(domain, outcomes, runs),
+  )
+  const scopedRuns = billableRuns(runs).filter((run) =>
+    domainKeys.some((domain) => runBelongsToStoryDomain(run, domain)),
+  )
+  const qualityScores = scopedRuns
+    .map((run) => run.quality_score)
+    .filter((score): score is number => typeof score === 'number')
+  const impact = domains.reduce((sum, domain) => sum + domain.impact, 0)
+  const cost = domains.reduce((sum, domain) => sum + domain.cost, 0)
+  const quality = qualityScores.length
+    ? (qualityScores.reduce((sum, score) => sum + score, 0) / qualityScores.length).toFixed(2)
+    : 'pending'
+  const agentCount = domains.reduce((sum, domain) => sum + domain.agentCount, 0)
+  const runCount = domains.reduce((sum, domain) => sum + domain.runCount, 0)
+  const completeRuns = domains.reduce((sum, domain) => sum + domain.completeRuns, 0)
+  const failedRuns = domains.reduce((sum, domain) => sum + domain.failedRuns, 0)
+  const outcomeCount = domains.reduce((sum, domain) => sum + domain.outcomeCount, 0)
+  const scopeLabel = scopeCopy[scope].label
+  const domainDetail = domains
+    .map((domain) => `${domain.label}: ${money(domain.impact)} value, ${costMoney(domain.cost)} cost`)
+    .join('; ')
+  const hasOutcomes = outcomeCount > 0
+  const hasRuns = runCount > 0
+
+  if (!hasRuns) {
+    return {
+      title: `${scopeLabel} is ready for a live run`,
+      story: `No ${scopeLabel} run has completed in this session yet. Start the selected scope to generate live Project Management and Revenue Management outcomes, evidence, and cost.`,
+      impact,
+      cost,
+      quality,
+      agentCount,
+      runCount,
+      completeRuns,
+      failedRuns,
+      outcomeCount,
+      savedTitle: '$0 protected yet',
+      savedCopy: 'The value will come from completed agent outputs written to the outcome ledger.',
+      nextTitle: `Run ${scopeLabel}`,
+      nextCopy: 'Start the run, watch progress move to the foreground, then review domain outcomes and cost.',
+      costDetail: 'No scoped run cost yet',
+      domains,
+    }
+  }
+
+  if (!hasOutcomes) {
+    return {
+      title: `${scopeLabel} captured run evidence; financial outcomes are pending`,
+      story: `${scopeLabel} has ${runCount} billable run${runCount === 1 ? '' : 's'} captured at ${costMoney(cost)} total cost. No financial outcome rows were produced yet, so inspect trace and failed runs before approving a business result.`,
+      impact,
+      cost,
+      quality,
+      agentCount,
+      runCount,
+      completeRuns,
+      failedRuns,
+      outcomeCount,
+      savedTitle: '$0 protected yet',
+      savedCopy: 'Run evidence exists, but no completed business outcome has been written for this scope.',
+      nextTitle: failedRuns > 0 ? 'Inspect failed runs' : 'Review trace evidence',
+      nextCopy:
+        failedRuns > 0
+          ? 'Open Evidence, inspect failed agent output, then retry the selected scope.'
+          : 'Open Evidence to confirm the run output and why no financial outcome was recorded.',
+      costDetail: `${runCount} billable run${runCount === 1 ? '' : 's'} - ${costMoney(cost)} total cost`,
+      domains,
+    }
+  }
+
+  return {
+    title: `${scopeLabel} protected ${money(impact)} across ${outcomeCount} live outcome${outcomeCount === 1 ? '' : 's'}`,
+    story: `${scopeLabel} converted completed agent outputs into live outcome-ledger value. ${domainDetail}. Total run cost for this scope is ${costMoney(cost)}, including token, API-call, and compute charges.`,
+    impact,
+    cost,
+    quality,
+    agentCount,
+    runCount,
+    completeRuns,
+    failedRuns,
+    outcomeCount,
+    savedTitle: `${money(impact)} protected`,
+    savedCopy: `${outcomeCount} outcome${outcomeCount === 1 ? '' : 's'} linked to ${runCount} billable run${runCount === 1 ? '' : 's'} with ${costMoney(cost)} total run cost.`,
+    nextTitle: failedRuns > 0 ? 'Approve value and inspect failures' : 'Approve domain action plan',
+    nextCopy:
+      failedRuns > 0
+        ? 'Use the outcome ledger for completed value, then inspect failed runs before closing the session.'
+        : 'Review the outcome ledger, validate trace evidence, and approve the next owner action.',
+    costDetail: `${runCount} billable run${runCount === 1 ? '' : 's'} - ${costMoney(cost)} total cost`,
+    domains,
+  }
+}
+
+const views: Array<{ id: ViewId; label: string; group: string; icon: LucideIcon; index: string }> = [
+  { id: 'story', label: 'Story View', group: 'Business', icon: DollarSign, index: '01' },
+  { id: 'outcomes', label: 'Outcome Ledger', group: 'Business', icon: BarChart3, index: '02' },
+  { id: 'run', label: 'Run Console', group: 'Run', icon: Play, index: '03' },
+  { id: 'evidence', label: 'Evidence', group: 'Technical', icon: Activity, index: '04' },
+  { id: 'architecture', label: 'Architecture', group: 'Technical', icon: Layers3, index: '05' },
+  { id: 'settings', label: 'Settings', group: 'Control', icon: Settings, index: '06' },
+  { id: 'backlog', label: 'UI Tasks', group: 'Control', icon: FileText, index: '07' },
 ]
 
+const viewCopy: Record<ViewId, { title: string; subtitle: string }> = {
+  story: {
+    title: 'Story View',
+    subtitle: 'Outcome-first story of what was solved, what value was protected, and what action is next.',
+  },
+  outcomes: {
+    title: 'Outcome Ledger',
+    subtitle: 'Financial value by business domain, source agent, confidence, and action owner.',
+  },
+  run: {
+    title: 'Run Console',
+    subtitle: 'Scope-first execution surface for platform, domain, and single-agent runs.',
+  },
+  evidence: {
+    title: 'Evidence',
+    subtitle: 'Trace, cost, tokens, model, status, quality, and replay context.',
+  },
+  architecture: {
+    title: 'Architecture',
+    subtitle: 'Interactive system map from UI request to governed run evidence.',
+  },
+  settings: {
+    title: 'Settings',
+    subtitle: 'Provider, model, token pricing, and run defaults for the next demo execution.',
+  },
+  backlog: {
+    title: 'UI Tasks',
+    subtitle: 'Implementation backlog for the next React UI iteration.',
+  },
+}
+
 function money(value: number) {
-  return `$${Math.round(value).toLocaleString()}`
+  const formatted = Math.round(Math.abs(value)).toLocaleString()
+  return value < 0 ? `-$${formatted}` : `$${formatted}`
 }
 
 function costMoney(value: number) {
   if (value === 0) return '$0.0000'
+  if (Math.abs(value) < 0.0001) return `$${value.toFixed(7)}`
   if (Math.abs(value) < 0.01) return `$${value.toFixed(4)}`
   return `$${value.toFixed(2)}`
 }
 
 function unitCostMoney(value: number) {
+  if (Math.abs(value) < 0.0001) return `$${value.toFixed(7)}`
   return `$${value.toFixed(value < 0.01 ? 4 : 2)}`
+}
+
+function providerLabel(provider: string) {
+  return providerCatalog[provider as ProviderKey]?.label ?? provider
+}
+
+function providerModels(pricing: ModelPricing[], provider: ProviderKey) {
+  const pricedModels = pricing
+    .filter((item) => item.provider === provider && item.effective_to === null)
+    .map((item) => item.model_name)
+  return pricedModels.length > 0 ? pricedModels : fallbackModelsByProvider[provider]
+}
+
+function pricingForProviderModel(
+  pricing: ModelPricing[],
+  provider: ProviderKey,
+  modelName: string,
+) {
+  return pricing.find(
+    (item) =>
+      item.provider === provider &&
+      item.model_name === modelName &&
+      item.effective_to === null,
+  )
+}
+
+function providerNextAction(provider: ProviderKey) {
+  return providerCatalog[provider].nextAction
 }
 
 function qualityLabel(runs: AgentRun[]) {
@@ -604,30 +1076,90 @@ function recentRuns(runs: AgentRun[]) {
   return [...runs].reverse().slice(0, 8)
 }
 
+const workflowNodeOrder: Record<string, number> = {
+  node_decompose: 1,
+  node_capacity_check: 2,
+  node_risk_assess: 3,
+  node_assign: 4,
+  node_synthesize: 5,
+}
+
+const evidenceDomainOrder: EvidenceDomain[] = ['PROJECT_DELIVERY', 'REVENUE_OPS', 'PLATFORM']
+
+const evidenceDomainLabels: Record<EvidenceDomain, string> = {
+  PROJECT_DELIVERY: 'Project Management',
+  REVENUE_OPS: 'Revenue Management',
+  PLATFORM: 'Platform',
+}
+
+function evidenceGroups(runs: AgentRun[]): EvidenceGroup[] {
+  const newestFirst = [...runs].reverse()
+  const nodesByParent = new Map<string, AgentRun[]>()
+  for (const run of runs) {
+    if (run.run_type === 'WORKFLOW_NODE' && run.parent_run_id) {
+      const nodes = nodesByParent.get(run.parent_run_id) ?? []
+      nodes.push(run)
+      nodesByParent.set(run.parent_run_id, nodes)
+    }
+  }
+
+  const groups: EvidenceRunGroup[] = []
+  for (const run of newestFirst) {
+    if (run.run_type === 'WORKFLOW_NODE') continue
+    if (run.run_type === 'WORKFLOW_PARENT') {
+      const nodes = [...(nodesByParent.get(run.id) ?? [])].sort(
+        (left, right) =>
+          (workflowNodeOrder[left.agent_id] ?? 99) - (workflowNodeOrder[right.agent_id] ?? 99),
+      )
+      groups.push({ kind: 'workflow', parent: run, nodes })
+    } else {
+      groups.push({ kind: 'run', run })
+    }
+  }
+
+  const groupsByDomain = new Map<EvidenceDomain, EvidenceRunGroup[]>()
+  for (const group of groups) {
+    const domain = evidenceRunGroupDomain(group)
+    const domainGroups = groupsByDomain.get(domain) ?? []
+    domainGroups.push(group)
+    groupsByDomain.set(domain, domainGroups)
+  }
+
+  return evidenceDomainOrder
+    .map((domain) => ({
+      kind: 'domain' as const,
+      domain,
+      label: evidenceDomainLabels[domain],
+      items: groupsByDomain.get(domain) ?? [],
+    }))
+    .filter((group) => group.items.length > 0)
+}
+
+function evidenceRunGroupDomain(group: EvidenceRunGroup): EvidenceDomain {
+  const run = group.kind === 'workflow' ? group.parent : group.run
+  const agent = agentCatalog[run.agent_id as AgentKey]
+  if (agent?.domain === 'PROJECT_DELIVERY') return 'PROJECT_DELIVERY'
+  if (agent?.domain === 'REVENUE_OPS') return 'REVENUE_OPS'
+  return 'PLATFORM'
+}
+
+function evidenceRunGroupStatus(group: EvidenceRunGroup) {
+  return group.kind === 'workflow' ? group.parent.status : group.run.status
+}
+
+function evidenceRunGroupKey(group: EvidenceRunGroup) {
+  return group.kind === 'workflow' ? group.parent.id : group.run.id
+}
+
 function billableRuns(runs: AgentRun[]) {
   return runs.filter((run) => run.run_type === 'SINGLE_SHOT' || run.run_type === 'WORKFLOW_PARENT')
 }
 
-function pricingForRuns(runs: AgentRun[], pricing: ModelPricing[]) {
-  const pricedRun = runs.find((run) => run.model_used)
-  const fallback = pricing.find((item) => item.model_name === 'llama3.2:latest')
-    ?? pricing.find((item) => item.model_name === 'llama3.2:3b')
-  if (!pricedRun) return fallback
-  return pricing.find((item) => item.model_name === pricedRun.model_used && item.effective_to === null)
-    ?? fallback
-}
-
-function tokenCostDetail(
-  pricing: ModelPricing | undefined,
-  promptTokens: number,
-  completionTokens: number,
-) {
-  const inputRate = pricing ? unitCostMoney(pricing.input_cost_per_1k) : 'pending'
-  const outputRate = pricing ? unitCostMoney(pricing.output_cost_per_1k) : 'pending'
-  const tokenDetail = promptTokens + completionTokens > 0
-    ? `${promptTokens.toLocaleString()} in / ${completionTokens.toLocaleString()} out`
-    : 'no priced tokens yet'
-  return `${tokenDetail} - ${inputRate}/1K in, ${outputRate}/1K out`
+function computeCostPerSecond(pricing: ModelPricing) {
+  return (
+    COMPUTE_VCPU_PER_AGENT_RUN * pricing.compute_vcpu_cost_per_second +
+    COMPUTE_MEMORY_GIB_PER_AGENT_RUN * pricing.compute_memory_gib_cost_per_second
+  )
 }
 
 function agentConfigsFor(agentIds: AgentKey[]) {
@@ -720,7 +1252,7 @@ function visibleScenariosFor(
 }
 
 export default function App() {
-  const [view, setView] = useState<ViewId>('business')
+  const [view, setView] = useState<ViewId>('story')
   const [persona, setPersona] = useState<Persona>('business')
   const [scope, setScope] = useState<RunScope>('platform')
   const [selectedAgent, setSelectedAgent] = useState<AgentKey>('agent-sprint-risk')
@@ -730,6 +1262,10 @@ export default function App() {
   const [statusMessage, setStatusMessage] = useState('Ready to run the locked demo flow.')
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [activeRun, setActiveRun] = useState<ActiveRun | null>(null)
+  const [payloadPreviewOpen, setPayloadPreviewOpen] = useState(false)
+  const [settingsProvider, setSettingsProvider] = useState<ProviderKey>('ollama')
+  const [settingsModel, setSettingsModel] = useState('llama3.2:3b')
+  const [runtimeSettings, setRuntimeSettings] = useState<RuntimeSettings | null>(null)
   const [projectScenarioIndex, setProjectScenarioIndex] = useState(0)
   const [revenueScenarioIndex, setRevenueScenarioIndex] = useState(0)
   const [projectPlanningInput, setProjectPlanningInput] = useState<ProjectPlanningInput>(() =>
@@ -750,31 +1286,24 @@ export default function App() {
     () => agentConfigsFor(availableAgentIds),
     [availableAgentIds],
   )
-  const billableRunList = useMemo(() => billableRuns(runs), [runs])
-
   const sessionImpact = useMemo(
     () => outcomes.reduce((sum, outcome) => sum + outcome.financial_impact_usd, 0),
     [outcomes],
   )
-  const sessionCost = useMemo(
-    () => billableRunList.reduce((sum, run) => sum + run.cost_usd, 0),
-    [billableRunList],
+  const settingsModels = useMemo(
+    () => providerModels(pricing, settingsProvider),
+    [pricing, settingsProvider],
   )
-  const sessionPromptTokens = useMemo(
-    () => billableRunList.reduce((sum, run) => sum + run.prompt_tokens, 0),
-    [billableRunList],
+  const settingsModelPricing = useMemo(
+    () => pricingForProviderModel(pricing, settingsProvider, settingsModel),
+    [pricing, settingsModel, settingsProvider],
   )
-  const sessionCompletionTokens = useMemo(
-    () => billableRunList.reduce((sum, run) => sum + run.completion_tokens, 0),
-    [billableRunList],
-  )
-  const activePricing = useMemo(
-    () => pricingForRuns(billableRunList, pricing),
-    [billableRunList, pricing],
-  )
-  const tokenDetail = useMemo(
-    () => tokenCostDetail(activePricing, sessionPromptTokens, sessionCompletionTokens),
-    [activePricing, sessionPromptTokens, sessionCompletionTokens],
+  const settingsRuntimeProvider = useMemo(
+    () =>
+      runtimeSettings?.providers.find(
+        (item) => item.provider === settingsProvider,
+      ),
+    [runtimeSettings, settingsProvider],
   )
   const activeProgress = useMemo(() => progressFor(activeRun, runs), [activeRun, runs])
   const hasRunningWork = Boolean(activeProgress && !activeProgress.terminal)
@@ -801,6 +1330,22 @@ export default function App() {
   useEffect(() => {
     void api.pricing.list().then(setPricing).catch(() => undefined)
   }, [])
+
+  useEffect(() => {
+    void api.settings.runtime()
+      .then((runtime) => {
+        setRuntimeSettings(runtime)
+        setSettingsProvider(runtime.active_provider)
+        setSettingsModel(runtime.active_model)
+      })
+      .catch(() => undefined)
+  }, [])
+
+  useEffect(() => {
+    if (!settingsModels.includes(settingsModel)) {
+      setSettingsModel(settingsModels[0] ?? '')
+    }
+  }, [settingsModel, settingsModels])
 
   useEffect(() => {
     if (!availableAgentIds.includes(selectedAgent)) {
@@ -855,6 +1400,35 @@ export default function App() {
     return scenario.payloads[agentId] ?? agentCatalog[agentId].payload
   }
 
+  function payloadPreviewGroupsFor(
+    agentIds: AgentKey[],
+    payloads?: Partial<Record<AgentKey, Record<string, unknown>>>,
+    scenarioTitles?: Partial<Record<AgentConfig['domain'], string>>,
+  ): PayloadPreviewGroup[] {
+    return [
+      {
+        domain: 'PROJECT_DELIVERY' as const,
+        label: 'Project Management',
+        scenarioTitle: scenarioTitles?.PROJECT_DELIVERY ?? currentProjectScenario.title,
+      },
+      {
+        domain: 'REVENUE_OPS' as const,
+        label: 'Revenue Management',
+        scenarioTitle: scenarioTitles?.REVENUE_OPS ?? currentRevenueScenario.title,
+      },
+    ]
+      .map((group) => ({
+        ...group,
+        items: agentIds
+          .filter((agentId) => agentCatalog[agentId].domain === group.domain)
+          .map((agentId) => ({
+            agent: agentCatalog[agentId],
+            payload: payloads?.[agentId] ?? payloadForAgent(agentId),
+          })),
+      }))
+      .filter((group) => group.items.length > 0)
+  }
+
   function advanceScenarios(agentIds: AgentKey[]) {
     if (agentIds.some((agentId) => agentCatalog[agentId].domain === 'PROJECT_DELIVERY')) {
       setProjectScenarioIndex((index) => index + 1)
@@ -871,10 +1445,20 @@ export default function App() {
     setStatusMessage(`Submitting ${runLabel}: ${agentNames.join(', ')}.`)
     try {
       const activeSession = await ensureSession()
+      const payloadsByAgent = Object.fromEntries(
+        agentIds.map((agentId) => [agentId, payloadForAgent(agentId)]),
+      ) as Partial<Record<AgentKey, Record<string, unknown>>>
+      const scenarioTitles: Partial<Record<AgentConfig['domain'], string>> = {}
+      if (agentIds.some((agentId) => agentCatalog[agentId].domain === 'PROJECT_DELIVERY')) {
+        scenarioTitles.PROJECT_DELIVERY = currentProjectScenario.title
+      }
+      if (agentIds.some((agentId) => agentCatalog[agentId].domain === 'REVENUE_OPS')) {
+        scenarioTitles.REVENUE_OPS = currentRevenueScenario.title
+      }
       const tasks: TaskSubmit[] = agentIds.map((agentId) => ({
         agent_id: agentId,
         session_id: activeSession.id,
-        input_payload: payloadForAgent(agentId),
+        input_payload: payloadsByAgent[agentId] ?? payloadForAgent(agentId),
         priority: 'HIGH',
       }))
       const submittedTasks = await api.tasks.batch({ tasks })
@@ -883,6 +1467,8 @@ export default function App() {
         label: runLabel,
         agentIds,
         taskIds: submittedTasks.map((task) => task.id),
+        payloads: payloadsByAgent,
+        scenarioTitles,
         startedAt: Date.now(),
       })
       setStatusMessage(nextMessage.replace('submitted', 'running'))
@@ -921,13 +1507,83 @@ export default function App() {
     )
   }
 
-  const completeRuns = runs.filter((run) => run.status === 'COMPLETE').length
-  const failedRuns = runs.filter((run) => run.status === 'FAILED').length
+  async function applyProviderSelection() {
+    const pricingMessage = settingsModelPricing
+      ? `${unitCostMoney(settingsModelPricing.input_cost_per_1k)}/1K input, ${unitCostMoney(settingsModelPricing.output_cost_per_1k)}/1K output, ${unitCostMoney(settingsModelPricing.api_call_cost_per_1k)}/1K API, and ${unitCostMoney(computeCostPerSecond(settingsModelPricing))}/sec compute.`
+      : 'No active pricing row is available for this model yet.'
+    setStatusMessage(`Applying ${providerLabel(settingsProvider)} ${settingsModel}.`)
+    try {
+      const runtime = await api.settings.updateRuntime({
+        active_provider: settingsProvider,
+        model_name: settingsModel,
+      })
+      setRuntimeSettings(runtime)
+      setSettingsProvider(runtime.active_provider)
+      setSettingsModel(runtime.active_model)
+      setStatusMessage(
+        `${providerLabel(runtime.active_provider)} ${runtime.active_model} applied for live runs: ${pricingMessage} Next: run ${copy.label}.`,
+      )
+    } catch (error) {
+      setStatusMessage(
+        error instanceof Error
+          ? `Provider not applied: ${error.message}. Next: ${providerNextAction(settingsProvider)}`
+          : `Provider not applied. Next: ${providerNextAction(settingsProvider)}`,
+      )
+    }
+  }
+
+  function showPayloadPreview() {
+    setPayloadPreviewOpen(true)
+    setView('run')
+    setStatusMessage(
+      `Payload preview opened for ${copy.label}. Next: review Project Management and Revenue Management inputs, then run the selected scope.`,
+    )
+  }
+
+  function startGuidedDemo() {
+    setView('run')
+    setStatusMessage(
+      `Guided demo ready for ${copy.label}. Next: run the selected scope, then open Outcome ledger and Inspect trace.`,
+    )
+  }
+
+  function openTraceReplay() {
+    setView('evidence')
+    setStatusMessage(
+      runs.length > 0
+        ? 'Trace replay opened. Next: inspect failed runs first, then review quality and total run cost.'
+        : 'Trace replay has no runs yet. Next: run the selected scope from Run Console.',
+    )
+  }
+
+  function showUiTask(task: string) {
+    setStatusMessage(
+      `UI task selected: ${task}. Next: implement the task, run frontend build, and verify the click path in the app.`,
+    )
+  }
+
   const runProgressLabel =
     activeProgress && hasRunningWork
       ? `Running ${activeProgress.active.label} ${activeProgress.complete + activeProgress.failed}/${activeProgress.total}`
       : copy.runTitle
   const RunButtonIcon = hasRunningWork || isSubmitting ? LoaderCircle : Play
+  const currentViewCopy = viewCopy[view]
+  const payloadPreviewAgentIds = activeRun && hasRunningWork ? activeRun.agentIds : scopeAgentIds[scope]
+  const payloadPreviewGroups = payloadPreviewGroupsFor(
+    payloadPreviewAgentIds,
+    activeRun && hasRunningWork ? activeRun.payloads : undefined,
+    activeRun && hasRunningWork ? activeRun.scenarioTitles : undefined,
+  )
+
+  function navBadge(targetView: ViewId) {
+    if (targetView === 'story') return String(outcomes.length)
+    if (targetView === 'outcomes') return sessionImpact > 0 ? money(sessionImpact) : '$0'
+    if (targetView === 'run') return String(runs.length)
+    if (targetView === 'evidence') return String(Math.max(recentRuns(runs).length, 8))
+    if (targetView === 'architecture') return String(architectureLayers.length)
+    if (targetView === 'settings') return String(providerOrder.length)
+    return '12'
+  }
 
   return (
     <div className={`app-shell ${persona}-lens`}>
@@ -973,13 +1629,12 @@ export default function App() {
         </div>
 
         <nav className="nav">
-          {['Business', 'Technical', 'Control'].map((group) => (
+          {['Business', 'Run', 'Technical', 'Control'].map((group) => (
             <div className="nav-group" key={group}>
               <span>{group}</span>
               {views
                 .filter((item) => item.group === group)
                 .map((item) => {
-                  const Icon = item.icon
                   return (
                     <button
                       className={view === item.id ? 'active' : ''}
@@ -987,8 +1642,9 @@ export default function App() {
                       key={item.id}
                       onClick={() => setView(item.id)}
                     >
-                      <Icon size={16} />
-                      {item.label}
+                      <span>{item.index}</span>
+                      <span>{item.label}</span>
+                      <b>{navBadge(item.id)}</b>
                     </button>
                   )
                 })}
@@ -998,7 +1654,8 @@ export default function App() {
 
         <div className="runtime-card">
           <strong>Runtime</strong>
-          <div><span>Provider</span><b>Ollama</b></div>
+          <div><span>Provider</span><b>{providerLabel(settingsProvider)}</b></div>
+          <div><span>Model</span><b>{settingsModel}</b></div>
           <div><span>Session</span><b>{session?.status ?? 'Starting'}</b></div>
           <div><span>SSE</span><b>Connected</b></div>
         </div>
@@ -1007,18 +1664,14 @@ export default function App() {
       <main>
         <header className="topbar">
           <div>
-            <h2>{persona === 'business' ? 'Business View' : 'Technical View'}</h2>
-            <p>
-              {persona === 'business'
-                ? 'Story-led view of what was solved, what value was protected, and what action is next.'
-                : 'Evidence-led view of which agents ran, what was captured, and whether the result can be trusted.'}
-            </p>
+            <h2>{currentViewCopy.title}</h2>
+            <p>{currentViewCopy.subtitle}</p>
           </div>
           <div className="top-actions">
             <button className="btn" type="button" onClick={() => setView('outcomes')}>
               <FileText size={16} /> Outcome ledger
             </button>
-            <button className="btn" type="button" onClick={() => setView('operations')}>
+            <button className="btn" type="button" onClick={() => setView('evidence')}>
               <Workflow size={16} /> Inspect trace
             </button>
             <button
@@ -1033,40 +1686,64 @@ export default function App() {
           </div>
         </header>
 
-        {view === 'business' && (
+        {view === 'story' && (
           <BusinessView
-            completeRuns={completeRuns}
             copy={copy}
-            failedRuns={failedRuns}
             isSubmitting={isSubmitting}
             activeProgress={activeProgress}
             currentProjectScenario={currentProjectScenario}
             onRunScope={() => void runSelectedScope()}
             onRunAgent={() => void runSelectedAgent()}
+            onGuidedDemo={startGuidedDemo}
+            onPayloadPreview={showPayloadPreview}
+            onTraceReplay={openTraceReplay}
             onViewChange={setView}
             outcomes={outcomes}
             persona={persona}
-            quality={qualityLabel(runs)}
             scope={scope}
             selectedAgent={selectedAgent}
             selectedAgentConfig={selectedAgentConfig}
-            sessionImpact={sessionImpact}
-            sessionCost={sessionCost}
-            tokenDetail={tokenDetail}
             runs={runs}
             setPersona={setPersona}
             setProjectPlanningInput={setProjectPlanningInput}
             setSelectedAgent={setSelectedAgent}
             statusMessage={statusMessage}
-            totalRuns={runs.length}
             availableAgentConfigs={availableAgentConfigs}
             availableAgentIds={availableAgentIds}
             projectPlanningInput={projectPlanningInput}
             visibleScenarios={visibleScenarios}
           />
         )}
-        {view === 'outcomes' && <OutcomesView outcomes={outcomes} sessionImpact={sessionImpact} />}
-        {view === 'operations' && (
+        {view === 'run' && (
+          <RunConsoleView
+            activeProgress={activeProgress}
+            availableAgentConfigs={availableAgentConfigs}
+            availableAgentIds={availableAgentIds}
+            copy={copy}
+            currentProjectScenario={currentProjectScenario}
+            isSubmitting={isSubmitting}
+            onGuidedDemo={startGuidedDemo}
+            onPayloadPreview={showPayloadPreview}
+            onPayloadPreviewClose={() => setPayloadPreviewOpen(false)}
+            onRunAgent={() => void runSelectedAgent()}
+            onRunScope={() => void runSelectedScope()}
+            onTraceReplay={openTraceReplay}
+            payloadPreviewGroups={payloadPreviewGroups}
+            payloadPreviewOpen={payloadPreviewOpen}
+            projectPlanningInput={projectPlanningInput}
+            scope={scope}
+            selectedAgent={selectedAgent}
+            selectedAgentConfig={selectedAgentConfig}
+            setProjectPlanningInput={setProjectPlanningInput}
+            setSelectedAgent={setSelectedAgent}
+            statusMessage={statusMessage}
+            visibleScenarios={visibleScenarios}
+          />
+        )}
+        {view === 'outcomes' && (
+          <OutcomesView outcomes={outcomes} runs={runs} sessionImpact={sessionImpact} />
+        )}
+        {view === 'evidence' && (
           <OperationsView runs={runs} statusMessage={statusMessage} onRefresh={() => void refresh()} />
         )}
         {view === 'architecture' && (
@@ -1081,10 +1758,25 @@ export default function App() {
         {view === 'settings' && (
           <SettingsView
             availableAgentIds={availableAgentIds}
+            modelPricing={settingsModelPricing}
+            models={settingsModels}
+            onApplyProvider={applyProviderSelection}
+            onRunAgent={() => void runSelectedAgent()}
+            onRunScope={() => void runSelectedScope()}
+            onViewChange={setView}
+            provider={settingsProvider}
+            providers={providerOrder}
+            runtimeProvider={settingsRuntimeProvider}
             scope={scope}
             selectedAgent={activeSelectedAgent}
+            selectedModel={settingsModel}
             setSelectedAgent={setSelectedAgent}
+            setSelectedModel={setSettingsModel}
+            setProvider={setSettingsProvider}
           />
+        )}
+        {view === 'backlog' && (
+          <BacklogView onTaskSelect={showUiTask} onViewChange={setView} />
         )}
       </main>
     </div>
@@ -1093,87 +1785,169 @@ export default function App() {
 
 function BusinessView({
   activeProgress,
-  completeRuns,
   copy,
   currentProjectScenario,
-  failedRuns,
   isSubmitting,
+  onGuidedDemo,
+  onPayloadPreview,
   onRunAgent,
   onRunScope,
+  onTraceReplay,
   onViewChange,
   outcomes,
   persona,
   projectPlanningInput,
-  quality,
   runs,
   scope,
   selectedAgent,
   selectedAgentConfig,
-  sessionCost,
-  sessionImpact,
   setPersona,
   setProjectPlanningInput,
   setSelectedAgent,
   statusMessage,
-  tokenDetail,
-  totalRuns,
   availableAgentConfigs,
   availableAgentIds,
   visibleScenarios,
 }: {
   activeProgress: RunProgress | null
-  completeRuns: number
   copy: (typeof scopeCopy)[RunScope]
   currentProjectScenario: DemoScenario
-  failedRuns: number
   isSubmitting: boolean
+  onGuidedDemo: () => void
+  onPayloadPreview: () => void
   onRunAgent: () => void
   onRunScope: () => void
+  onTraceReplay: () => void
   onViewChange: (view: ViewId) => void
   outcomes: BusinessOutcome[]
   persona: Persona
   projectPlanningInput: ProjectPlanningInput
-  quality: string
   scope: RunScope
   selectedAgent: AgentKey
   selectedAgentConfig: AgentConfig
-  sessionCost: number
-  sessionImpact: number
   runs: AgentRun[]
   setPersona: (persona: Persona) => void
   setProjectPlanningInput: (input: ProjectPlanningInput) => void
   setSelectedAgent: (agent: AgentKey) => void
   statusMessage: string
-  tokenDetail: string
-  totalRuns: number
   availableAgentConfigs: AgentConfig[]
   availableAgentIds: AgentKey[]
   visibleScenarios: DemoScenario[]
 }) {
   const runIsActive = Boolean(activeProgress && !activeProgress.terminal)
+  const storySummary = buildBusinessStorySummary(scope, outcomes, runs)
+  if (runIsActive && activeProgress) {
+    const resolvedRuns = activeProgress.complete + activeProgress.failed
+    const inFlightRuns = Math.max(0, activeProgress.total - resolvedRuns)
+
+    return (
+      <div className="page-stack story-run-focus-page">
+        <section className="section story-run-focus">
+          <SectionHeader
+            icon={<LoaderCircle className="spin-icon" size={18} />}
+            label="run in progress"
+            title={`Running ${activeProgress.active.label}`}
+            subtitle={`Story content is collapsed while ${activeProgress.total} agents produce live evidence and outcomes.`}
+            action={
+              <div className="button-row">
+                <button className="btn" type="button" onClick={onPayloadPreview}>
+                  <FileText size={16} /> Preview payload
+                </button>
+                <button className="btn" type="button" onClick={onTraceReplay}>
+                  <Workflow size={16} /> Inspect trace
+                </button>
+                <button className="btn primary" type="button" onClick={() => onViewChange('run')}>
+                  <Play size={16} /> Open run console
+                </button>
+              </div>
+            }
+          />
+          <div className="story-run-focus-grid">
+            <article className="run-focus-summary">
+              <span className="pill">Live run foreground</span>
+              <h3>{activeProgress.active.label}</h3>
+              <p className={statusMessage.startsWith('Run submission failed') ? 'run-status error' : 'run-status'}>
+                {statusMessage}
+              </p>
+              <div className="run-focus-metrics">
+                <div>
+                  <span>Progress</span>
+                  <strong>{resolvedRuns}/{activeProgress.total}</strong>
+                  <em>agents resolved</em>
+                </div>
+                <div>
+                  <span>In flight</span>
+                  <strong>{inFlightRuns}</strong>
+                  <em>running or queued</em>
+                </div>
+                <div>
+                  <span>Scope</span>
+                  <strong>{copy.label}</strong>
+                  <em>{scopeAgentIds[scope].length} agents</em>
+                </div>
+                <div>
+                  <span>Next best action</span>
+                  <strong>Inspect trace</strong>
+                  <em>review evidence as agents finish</em>
+                </div>
+              </div>
+              <div className="domain-agent-list" aria-label={`${copy.label} agents running`}>
+                <span>{copy.label} agents</span>
+                <div>
+                  {availableAgentConfigs.map((agent) => (
+                    <b key={agent.id}>{agent.name}</b>
+                  ))}
+                </div>
+              </div>
+            </article>
+            <RunProgressPanel progress={activeProgress} />
+          </div>
+        </section>
+
+        <section className="section collapsed-story-summary">
+          <SectionHeader
+            icon={<DollarSign size={18} />}
+            label="story collapsed"
+            title={storySummary.title}
+            subtitle="The business story, value protected, and next action return here when the run completes."
+            action={
+              <button className="btn" type="button" onClick={() => onViewChange('outcomes')}>
+                <FileText size={16} /> Outcome ledger
+              </button>
+            }
+          />
+        </section>
+      </div>
+    )
+  }
+
   return (
     <div className="page-stack">
       <section className="kpi-grid" aria-label="Business summary">
-        <Kpi label="Active scope" value={scopeCopy[scope].label} detail={`${scopeAgentIds[scope].length} agents`} />
-        <Kpi label="Agent runs" value={String(totalRuns)} detail={`${completeRuns} complete, ${failedRuns} failed`} />
-        <Kpi label="Quality" value={quality} detail="async judge score" />
+        <Kpi label="Active scope" value={scopeCopy[scope].label} detail={`${storySummary.agentCount} agents`} />
+        <Kpi
+          label="Agent runs"
+          value={String(storySummary.runCount)}
+          detail={`${storySummary.completeRuns} complete, ${storySummary.failedRuns} failed`}
+        />
+        <Kpi label="Quality" value={storySummary.quality} detail="async judge score" />
         <Kpi
           label="Financial impact"
-          value={sessionImpact > 0 ? money(sessionImpact) : copy.impact}
-          detail={sessionImpact > 0 ? 'live outcome ledger' : copy.impactSubtext}
+          value={money(storySummary.impact)}
+          detail={storySummary.outcomeCount > 0 ? 'live outcome ledger' : 'no live outcomes yet'}
         />
         <Kpi
-          label="Token cost"
-          value={costMoney(sessionCost)}
-          detail={tokenDetail}
+          label="Total run cost"
+          value={costMoney(storySummary.cost)}
+          detail={storySummary.costDetail}
         />
       </section>
 
       <section className="story-board">
         <div className="story-lead">
           <span className="pill">{persona === 'business' ? 'Business lens' : 'Technical lens'} - {copy.label}</span>
-          <h3>{copy.title}</h3>
-          <p>{copy.story}</p>
+          <h3>{storySummary.title}</h3>
+          <p>{storySummary.story}</p>
           <div className="story-path">
             <StoryStep index="01" title="Signal" copy="Delivery and revenue data enters a governed session." />
             <StoryStep index="02" title="Analysis" copy="Domain agents assess risk, forecast exposure, and create actions." />
@@ -1185,20 +1959,51 @@ function BusinessView({
 
         <aside className="value-panel">
           <span>Business value protected</span>
-          <strong>{sessionImpact > 0 ? money(sessionImpact) : copy.impact}</strong>
-          <p>{sessionImpact > 0 ? 'Live value from completed agent outcomes in this session.' : copy.savedCopy}</p>
+          <strong>{money(storySummary.impact)}</strong>
+          <p>{storySummary.savedCopy}</p>
           <div className="breakdown-list">
-            {copy.breakdown.map(([label, value]) => (
-              <div key={label}><span>{label}</span><b>{value}</b></div>
+            {storySummary.domains.map((domain) => (
+              <div key={domain.key}>
+                <span>{domain.label}</span>
+                <b>{money(domain.impact)} / {costMoney(domain.cost)} cost</b>
+              </div>
             ))}
           </div>
         </aside>
       </section>
 
+      <section className="domain-story-grid" aria-label="Domain run details">
+        {storySummary.domains.map((domain) => (
+          <article className="domain-story-card" key={domain.key}>
+            <div className="domain-story-head">
+              <span>{domain.label}</span>
+              <strong>{money(domain.impact)}</strong>
+              <em>{costMoney(domain.cost)} total run cost</em>
+            </div>
+            <div className="domain-story-stats">
+              <div><span>Agents</span><b>{domain.agentCount}</b></div>
+              <div><span>Runs</span><b>{domain.completeRuns}/{domain.runCount}</b></div>
+              <div><span>Outcomes</span><b>{domain.outcomeCount}</b></div>
+              <div><span>Confidence</span><b>{domain.confidence}</b></div>
+            </div>
+            <div className="domain-story-metrics">
+              <span>Top value drivers</span>
+              {domain.metrics.length > 0 ? (
+                domain.metrics.map(([label, value]) => (
+                  <div key={label}><span>{label}</span><b>{value}</b></div>
+                ))
+              ) : (
+                <p>{domain.primaryMetric}. Run this domain to populate live business value.</p>
+              )}
+            </div>
+          </article>
+        ))}
+      </section>
+
       <section className="solved-grid">
-        <InfoCard tone="good" label="Solved" title="Hidden risk became owned work" copy={copy.story} />
-        <InfoCard tone="good" label="Saved" title={copy.savedTitle} copy={copy.savedCopy} />
-        <InfoCard tone="warn" label="Next action" title={copy.nextTitle} copy={copy.nextCopy} />
+        <InfoCard tone="good" label="Solved" title="Live outcomes are grouped by domain" copy={storySummary.story} />
+        <InfoCard tone="good" label="Saved" title={storySummary.savedTitle} copy={storySummary.savedCopy} />
+        <InfoCard tone="warn" label="Next action" title={storySummary.nextTitle} copy={storySummary.nextCopy} />
       </section>
 
       <section className="section">
@@ -1239,7 +2044,7 @@ function BusinessView({
                 </strong>
                 <p>{copy.runCopy}</p>
               </button>
-              <button className="run-command" type="button" onClick={() => onViewChange('outcomes')}>
+              <button className="run-command" type="button" onClick={onGuidedDemo}>
                 <span>Guided demo</span>
                 <strong>Start walkthrough</strong>
                 <p>{copy.demoCopy}</p>
@@ -1284,8 +2089,8 @@ function BusinessView({
               onChange={(event) => setSelectedAgent(event.target.value as AgentKey)}
             />
             <div className="button-row">
-              <button className="btn" type="button" onClick={() => onViewChange('settings')}>Preview payload</button>
-              <button className="btn" type="button" onClick={() => onViewChange('operations')}>Replay last run</button>
+              <button className="btn" type="button" onClick={onPayloadPreview}>Preview payload</button>
+              <button className="btn" type="button" onClick={onTraceReplay}>Replay last run</button>
               <button
                 className="btn primary"
                 type="button"
@@ -1365,6 +2170,330 @@ function BusinessView({
   )
 }
 
+function RunConsoleView({
+  activeProgress,
+  availableAgentConfigs,
+  availableAgentIds,
+  copy,
+  currentProjectScenario,
+  isSubmitting,
+  onGuidedDemo,
+  onPayloadPreview,
+  onPayloadPreviewClose,
+  onRunAgent,
+  onRunScope,
+  onTraceReplay,
+  payloadPreviewGroups,
+  payloadPreviewOpen,
+  projectPlanningInput,
+  scope,
+  selectedAgent,
+  selectedAgentConfig,
+  setProjectPlanningInput,
+  setSelectedAgent,
+  statusMessage,
+  visibleScenarios,
+}: {
+  activeProgress: RunProgress | null
+  availableAgentConfigs: AgentConfig[]
+  availableAgentIds: AgentKey[]
+  copy: (typeof scopeCopy)[RunScope]
+  currentProjectScenario: DemoScenario
+  isSubmitting: boolean
+  onGuidedDemo: () => void
+  onPayloadPreview: () => void
+  onPayloadPreviewClose: () => void
+  onRunAgent: () => void
+  onRunScope: () => void
+  onTraceReplay: () => void
+  payloadPreviewGroups: PayloadPreviewGroup[]
+  payloadPreviewOpen: boolean
+  projectPlanningInput: ProjectPlanningInput
+  scope: RunScope
+  selectedAgent: AgentKey
+  selectedAgentConfig: AgentConfig
+  setProjectPlanningInput: (input: ProjectPlanningInput) => void
+  setSelectedAgent: (agent: AgentKey) => void
+  statusMessage: string
+  visibleScenarios: DemoScenario[]
+}) {
+  const runIsActive = Boolean(activeProgress && !activeProgress.terminal)
+  return (
+    <div className="page-stack">
+      {payloadPreviewOpen && (
+        <PayloadPreviewPanel
+          groups={payloadPreviewGroups}
+          onClose={onPayloadPreviewClose}
+          scopeLabel={copy.label}
+        />
+      )}
+      <section className="section">
+        <SectionHeader
+          icon={<Play size={18} />}
+          label={copy.label}
+          title="Run and Demo Console"
+          subtitle="Choose scope, review the active scenario, run one agent or the selected scope, and keep progress visible."
+          action={
+            <div className="button-row">
+              <button
+                className="btn"
+                type="button"
+                disabled={isSubmitting || runIsActive}
+                onClick={onRunAgent}
+              >
+                Run single agent
+              </button>
+              <button
+                className="btn primary"
+                type="button"
+                disabled={isSubmitting || runIsActive}
+                onClick={onRunScope}
+              >
+                {(isSubmitting || runIsActive) && <LoaderCircle className="spin-icon" size={16} />}
+                {isSubmitting
+                  ? 'Submitting...'
+                  : runIsActive && activeProgress
+                    ? `Running ${activeProgress.complete + activeProgress.failed}/${activeProgress.total}`
+                    : copy.runTitle}
+              </button>
+            </div>
+          }
+        />
+        <div className="run-console">
+          <div className="run-console-main">
+            <div className="scenario-strip">
+              {visibleScenarios.map((scenario) => (
+                <ScenarioCard scenario={scenario} key={scenario.id} />
+              ))}
+            </div>
+            {(scope === 'project' || scope === 'platform') && (
+              <ProjectPlanningInputCard
+                input={projectPlanningInput}
+                scenario={currentProjectScenario}
+                setInput={setProjectPlanningInput}
+              />
+            )}
+            <div className="run-command-grid">
+              <button
+                className={`run-command active ${runIsActive ? 'running' : ''}`}
+                type="button"
+                disabled={isSubmitting || runIsActive}
+                onClick={onRunScope}
+              >
+                <span>Selected scope</span>
+                <strong>
+                  {isSubmitting
+                    ? 'Submitting request'
+                    : runIsActive && activeProgress
+                      ? `Running ${activeProgress.active.label}`
+                      : copy.runTitle}
+                </strong>
+                <p>{copy.runCopy}</p>
+              </button>
+              <button className="run-command" type="button" onClick={onGuidedDemo}>
+                <span>Guided demo</span>
+                <strong>Start walkthrough</strong>
+                <p>{copy.demoCopy}</p>
+              </button>
+              <button
+                className="run-command"
+                type="button"
+                disabled={isSubmitting || runIsActive}
+                onClick={onRunAgent}
+              >
+                <span>Single agent</span>
+                <strong>Run selected agent</strong>
+                <p>{selectedAgentConfig.description}</p>
+              </button>
+            </div>
+          </div>
+
+          <aside className="demo-panel">
+            <span className="pill">Run status</span>
+            <h4>{copy.label}</h4>
+            <p className={statusMessage.startsWith('Run submission failed') ? 'run-status error' : 'run-status'}>
+              {statusMessage}
+            </p>
+            <div className="domain-agent-list" aria-label={`${copy.label} agents`}>
+              <span>{copy.label} agents</span>
+              <div>
+                {availableAgentConfigs.map((agent) => (
+                  <b key={agent.id}>{agent.name}</b>
+                ))}
+              </div>
+            </div>
+            <div className="selected-agent-summary">
+              <span>Single-agent target</span>
+              <strong>{selectedAgentConfig.name}</strong>
+              <small>{selectedAgentConfig.description}</small>
+            </div>
+            <label htmlFor="run-console-agent">{copy.label} single-agent run</label>
+            <AgentSelect
+              id="run-console-agent"
+              agentIds={availableAgentIds}
+              value={selectedAgent}
+              onChange={(event) => setSelectedAgent(event.target.value as AgentKey)}
+            />
+            <div className="button-row">
+              <button className="btn" type="button" onClick={onPayloadPreview}>Preview payload</button>
+              <button className="btn" type="button" onClick={onTraceReplay}>Replay last run</button>
+              <button
+                className="btn primary"
+                type="button"
+                onClick={onRunScope}
+                disabled={isSubmitting || runIsActive}
+              >
+                {(isSubmitting || runIsActive) && <LoaderCircle className="spin-icon" size={16} />}
+                {isSubmitting
+                  ? 'Submitting...'
+                  : runIsActive && activeProgress
+                    ? `Running ${activeProgress.complete + activeProgress.failed}/${activeProgress.total}`
+                    : copy.runTitle}
+              </button>
+            </div>
+            {activeProgress && <RunProgressPanel progress={activeProgress} />}
+          </aside>
+        </div>
+      </section>
+    </div>
+  )
+}
+
+function PayloadPreviewPanel({
+  groups,
+  onClose,
+  scopeLabel,
+}: {
+  groups: PayloadPreviewGroup[]
+  onClose: () => void
+  scopeLabel: string
+}) {
+  return (
+    <section className="section payload-preview-section">
+      <SectionHeader
+        icon={<FileText size={18} />}
+        label="payload preview"
+        title={`${scopeLabel} Inputs`}
+        subtitle="These are the exact app payloads used for the selected run scope. ProjectPlanningAgent reflects the editable project input."
+        action={
+          <button className="btn" type="button" onClick={onClose}>
+            Hide preview
+          </button>
+        }
+      />
+      <div className="payload-domain-list">
+        {groups.map((group) => (
+          <details className="payload-domain-group" key={group.domain} open>
+            <summary>
+              <div>
+                <span>{group.label}</span>
+                <strong>{group.scenarioTitle}</strong>
+                <em>{group.items.length} payload{group.items.length === 1 ? '' : 's'} in this domain</em>
+              </div>
+              <b>{group.items.length} agents</b>
+            </summary>
+            <div className="payload-agent-list">
+              {group.items.map(({ agent, payload }) => (
+                <details className="payload-agent-card" key={agent.id} open={group.items.length <= 4}>
+                  <summary>
+                    <div>
+                      <strong>{agent.name}</strong>
+                      <span>{agent.description}</span>
+                    </div>
+                    <b>{Object.keys(payload).length} fields</b>
+                  </summary>
+                  <pre>{JSON.stringify(payload, null, 2)}</pre>
+                </details>
+              ))}
+            </div>
+          </details>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+const backlogGroups = [
+  {
+    label: 'P0 - Flow clarity',
+    tasks: [
+      ['Make Run Console the execution hub', 'Top run actions should route to the dedicated run surface with progress, scope, scenario, and agent status.'],
+      ['Separate persona from scope', 'Persona changes the presentation. Scope changes which agents execute.'],
+      ['Add guided demo state machine', 'Walk through run, progress, outcome, evidence, architecture, and next action.'],
+      ['Persist visible run progress', 'Keep progress visible while background tasks execute.'],
+    ],
+  },
+  {
+    label: 'P1 - Business value',
+    tasks: [
+      ['Make Outcome Ledger the anchor', 'Use value, confidence, owner, domain, and source run as first-class columns.'],
+      ['Add owner and next action fields', 'Business users need who owns the recovery plan or save motion.'],
+      ['Show before and after story', 'Translate output into risk before, action taken, risk after, and saved value.'],
+      ['Add executive export state', 'Create a CFO-ready summary action for handoff.'],
+    ],
+  },
+  {
+    label: 'P2 - Technical trust',
+    tasks: [
+      ['Add trace detail drawer', 'Click a run row to show prompt, response, parsed output, model, run cost, quality, and retry lineage.'],
+      ['Connect architecture to live runs', 'Highlight active architecture layers as runs complete.'],
+      ['Improve runtime settings', 'Expose provider, model, price, concurrency, quality judge, and scenario controls.'],
+      ['Run responsive layout pass', 'Verify readability on 1366px desktop and tablet widths.'],
+    ],
+  },
+] as const
+
+function BacklogView({
+  onTaskSelect,
+  onViewChange,
+}: {
+  onTaskSelect: (task: string) => void
+  onViewChange: (view: ViewId) => void
+}) {
+  return (
+    <div className="page-stack">
+      <section className="section">
+        <SectionHeader
+          icon={<FileText size={18} />}
+          label="implementation plan"
+          title="UI and Flow Improvement Tasks"
+          subtitle="Tasks to move the product UI toward the clearer enterprise flow shown in the prototype."
+          action={
+            <div className="button-row">
+              <button className="btn" type="button" onClick={() => onViewChange('run')}>
+                Open run console
+              </button>
+              <button className="btn primary" type="button" onClick={() => onTaskSelect('Start with P0 flow clarity')}>
+                Mark P0 ready
+              </button>
+            </div>
+          }
+        />
+        <div className="task-group-grid">
+          {backlogGroups.map((group) => (
+            <article className="task-group" key={group.label}>
+              <span>{group.label}</span>
+              <div>
+                {group.tasks.map(([title, body]) => (
+                  <button
+                    className="task-item"
+                    type="button"
+                    key={title}
+                    onClick={() => onTaskSelect(title)}
+                  >
+                    <strong>{title}</strong>
+                    <p>{body}</p>
+                  </button>
+                ))}
+              </div>
+            </article>
+          ))}
+        </div>
+      </section>
+    </div>
+  )
+}
+
 function RunScopeModel() {
   return (
     <section className="section technical-block">
@@ -1415,8 +2544,8 @@ function TechnicalEvidence({ runs }: { runs: AgentRun[] }) {
       </div>
       {runs.length > 0 && (
         <div className="run-list compact">
-          {runs.map((run) => (
-            <RunRow run={run} key={run.id} />
+          {evidenceGroups(runs).map((group) => (
+            <EvidenceGroupView group={group} key={group.domain} />
           ))}
         </div>
       )}
@@ -1424,13 +2553,145 @@ function TechnicalEvidence({ runs }: { runs: AgentRun[] }) {
   )
 }
 
+type OutcomeLedgerRow = {
+  outcome: BusinessOutcome
+  run: AgentRun | undefined
+  agentName: string
+  cost: number
+  net: number
+  roi: number | null
+  owner: string
+  action: string
+  narrative: string
+}
+
+type OutcomeLedgerGroup = {
+  domain: string
+  label: string
+  rows: OutcomeLedgerRow[]
+  impact: number
+  cost: number
+  net: number
+  roi: number | null
+  confidence: number | null
+  agentCount: number
+}
+
+function ledgerDomainLabel(domain: string) {
+  if (domain === 'PROJECT_DELIVERY') return 'Project Management'
+  if (domain === 'REVENUE_OPS') return 'Revenue Management'
+  return domain.replace(/_/g, ' ')
+}
+
+function uniqueRunCost(rows: OutcomeLedgerRow[]) {
+  const costs = new Map<string, number>()
+  for (const row of rows) {
+    if (row.run) costs.set(row.run.id, row.run.cost_usd)
+  }
+  return [...costs.values()].reduce((sum, value) => sum + value, 0)
+}
+
+function formatMultiple(value: number | null) {
+  if (value === null || !Number.isFinite(value)) return 'n/a'
+  return `${value.toFixed(value >= 10 ? 0 : 1)}x`
+}
+
+function formatConfidence(value: number | null) {
+  return value === null ? 'pending' : value.toFixed(2)
+}
+
+function valueTone(value: number) {
+  if (value < 0) return 'negative'
+  if (value > 0) return 'positive'
+  return 'neutral'
+}
+
+function buildOutcomeRows(outcomes: BusinessOutcome[], runs: AgentRun[]): OutcomeLedgerRow[] {
+  const runById = new Map(runs.map((run) => [run.id, run]))
+  return outcomes
+    .map((outcome) => {
+      const run = runById.get(outcome.agent_run_id)
+      const metadata = outcomeMetadata(outcome.metric_name)
+      const agentConfig = run ? agentConfigForRun(run) : undefined
+      const cost = run?.cost_usd ?? 0
+      return {
+        outcome,
+        run,
+        agentName: agentConfig?.name ?? run?.agent_id ?? 'Unknown agent',
+        cost,
+        net: outcome.financial_impact_usd - cost,
+        roi: cost > 0 ? outcome.financial_impact_usd / cost : null,
+        owner: metadata.owner,
+        action: metadata.action,
+        narrative: metadata.narrative,
+      }
+    })
+    .sort((left, right) => right.outcome.financial_impact_usd - left.outcome.financial_impact_usd)
+}
+
+function buildOutcomeGroups(rows: OutcomeLedgerRow[]): OutcomeLedgerGroup[] {
+  const grouped = new Map<string, OutcomeLedgerRow[]>()
+  for (const row of rows) {
+    const groupRows = grouped.get(row.outcome.domain) ?? []
+    groupRows.push(row)
+    grouped.set(row.outcome.domain, groupRows)
+  }
+  return [...grouped.entries()]
+    .map(([domain, groupRows]) => {
+      const impact = groupRows.reduce(
+        (sum, row) => sum + row.outcome.financial_impact_usd,
+        0,
+      )
+      const cost = uniqueRunCost(groupRows)
+      const confidenceScores = groupRows.map((row) => row.outcome.confidence_score)
+      const confidence = confidenceScores.length
+        ? confidenceScores.reduce((sum, score) => sum + score, 0) / confidenceScores.length
+        : null
+      const agents = new Set(groupRows.map((row) => row.agentName))
+      return {
+        domain,
+        label: ledgerDomainLabel(domain),
+        rows: groupRows,
+        impact,
+        cost,
+        net: impact - cost,
+        roi: cost > 0 ? impact / cost : null,
+        confidence,
+        agentCount: agents.size,
+      }
+    })
+    .sort((left, right) => right.impact - left.impact)
+}
+
 function OutcomesView({
   outcomes,
+  runs,
   sessionImpact,
 }: {
   outcomes: BusinessOutcome[]
+  runs: AgentRun[]
   sessionImpact: number
 }) {
+  const rows = useMemo(() => buildOutcomeRows(outcomes, runs), [outcomes, runs])
+  const groups = useMemo(() => buildOutcomeGroups(rows), [rows])
+  const [selectedDomain, setSelectedDomain] = useState<string | null>(null)
+  const [selectedOutcomeId, setSelectedOutcomeId] = useState<string | null>(null)
+  const selectedGroup = groups.find((group) => group.domain === selectedDomain) ?? groups[0]
+  const selectedRow =
+    selectedGroup?.rows.find((row) => row.outcome.id === selectedOutcomeId) ??
+    selectedGroup?.rows[0]
+  const ledgerCost = uniqueRunCost(rows)
+  const ledgerNet = sessionImpact - ledgerCost
+  const ledgerRoi = ledgerCost > 0 ? sessionImpact / ledgerCost : null
+  const ledgerConfidence = rows.length
+    ? rows.reduce((sum, row) => sum + row.outcome.confidence_score, 0) / rows.length
+    : null
+
+  function selectGroup(group: OutcomeLedgerGroup) {
+    setSelectedDomain(group.domain)
+    setSelectedOutcomeId(null)
+  }
+
   return (
     <div className="page-stack">
       <section className="section">
@@ -1438,28 +2699,108 @@ function OutcomesView({
           icon={<BarChart3 size={18} />}
           label={money(sessionImpact)}
           title="Outcome Ledger"
-          subtitle="Financial outcomes by domain, metric, confidence, and agent run."
+          subtitle="CFO view of protected value, run cost, confidence, source agent, owner, and next action."
         />
         {outcomes.length === 0 ? (
           <EmptyState text="Run a platform or domain demo to populate financial outcomes." />
         ) : (
-          <div className="outcome-table">
-            <table>
-              <thead>
-                <tr><th>Domain</th><th>Metric</th><th>Impact</th><th>Confidence</th></tr>
-              </thead>
-              <tbody>
-                {outcomes.map((outcome) => (
-                  <tr key={outcome.id}>
-                    <td>{outcome.domain}</td>
-                    <td>{outcome.metric_name}</td>
-                    <td>{money(outcome.financial_impact_usd)}</td>
-                    <td>{outcome.confidence_score.toFixed(2)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+          <>
+            <div className="outcome-ledger-kpis" aria-label="Outcome ledger summary">
+              <Kpi label="Protected value" value={money(sessionImpact)} detail={`${rows.length} outcomes`} />
+              <Kpi label="Run cost" value={costMoney(ledgerCost)} detail="token, API, compute" />
+              <Kpi
+                label="Net value"
+                value={money(ledgerNet)}
+                detail={ledgerNet >= 0 ? 'after run cost' : 'cost exceeds value'}
+              />
+              <Kpi label="ROI" value={formatMultiple(ledgerRoi)} detail={`${formatConfidence(ledgerConfidence)} confidence`} />
+            </div>
+
+            <div className="outcome-domain-grid" aria-label="Outcome groups">
+              {groups.map((group) => (
+                <button
+                  className={`outcome-domain-card ${selectedGroup?.domain === group.domain ? 'active' : ''}`}
+                  type="button"
+                  key={group.domain}
+                  onClick={() => selectGroup(group)}
+                >
+                  <span>{group.label}</span>
+                  <strong>{money(group.impact)}</strong>
+                  <small>{group.rows.length} outcomes from {group.agentCount} agents</small>
+                  <div>
+                    <b>{costMoney(group.cost)} cost</b>
+                    <b>{formatMultiple(group.roi)} ROI</b>
+                    <b>{formatConfidence(group.confidence)} confidence</b>
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            {selectedGroup && (
+              <div className="outcome-ledger-workspace">
+                <section className="outcome-drilldown" aria-label={`${selectedGroup.label} outcomes`}>
+                  <div className="outcome-drilldown-head">
+                    <div>
+                      <span>Selected group</span>
+                      <h3>{selectedGroup.label}</h3>
+                      <p>
+                        {money(selectedGroup.impact)} protected value, {costMoney(selectedGroup.cost)} run cost, {money(selectedGroup.net)} net.
+                      </p>
+                    </div>
+                    <strong>{formatMultiple(selectedGroup.roi)}</strong>
+                  </div>
+                  <div className="outcome-row-list">
+                    {selectedGroup.rows.map((row) => (
+                      <button
+                        className={`outcome-row ${selectedRow?.outcome.id === row.outcome.id ? 'active' : ''}`}
+                        type="button"
+                        key={row.outcome.id}
+                        onClick={() => setSelectedOutcomeId(row.outcome.id)}
+                      >
+                        <div>
+                          <strong>{metricLabel(row.outcome.metric_name)}</strong>
+                          <span>{row.agentName} - owner: {row.owner}</span>
+                        </div>
+                        <b className={valueTone(row.outcome.financial_impact_usd)}>
+                          {money(row.outcome.financial_impact_usd)}
+                        </b>
+                        <em>{row.outcome.confidence_score.toFixed(2)}</em>
+                      </button>
+                    ))}
+                  </div>
+                </section>
+
+                <aside className="outcome-detail-panel" aria-label="Outcome detail">
+                  {selectedRow ? (
+                    <>
+                      <span>Outcome detail</span>
+                      <h3>{metricLabel(selectedRow.outcome.metric_name)}</h3>
+                      <p>{selectedRow.narrative}</p>
+                      <dl>
+                        <div><dt>Financial impact</dt><dd className={valueTone(selectedRow.outcome.financial_impact_usd)}>{money(selectedRow.outcome.financial_impact_usd)}</dd></div>
+                        <div><dt>Run cost</dt><dd>{costMoney(selectedRow.cost)}</dd></div>
+                        <div><dt>Net value</dt><dd className={valueTone(selectedRow.net)}>{money(selectedRow.net)}</dd></div>
+                        <div><dt>ROI</dt><dd>{formatMultiple(selectedRow.roi)}</dd></div>
+                        <div><dt>Confidence</dt><dd>{selectedRow.outcome.confidence_score.toFixed(2)}</dd></div>
+                        <div><dt>Source agent</dt><dd>{selectedRow.agentName}</dd></div>
+                        <div><dt>Model</dt><dd>{selectedRow.run?.model_used ?? 'not captured'}</dd></div>
+                        <div><dt>Latency</dt><dd>{selectedRow.run ? `${selectedRow.run.latency_ms} ms` : 'not captured'}</dd></div>
+                        <div><dt>Tokens</dt><dd>{selectedRow.run?.total_tokens ?? 0}</dd></div>
+                        <div><dt>Metric basis</dt><dd>{selectedRow.outcome.metric_value.toLocaleString()} {selectedRow.outcome.metric_unit}</dd></div>
+                        <div><dt>Action owner</dt><dd>{selectedRow.owner}</dd></div>
+                      </dl>
+                      <div className="outcome-next-action">
+                        <strong>Next action</strong>
+                        <p>{selectedRow.action}</p>
+                      </div>
+                    </>
+                  ) : (
+                    <EmptyState text="Select a domain outcome to inspect detail." />
+                  )}
+                </aside>
+              </div>
+            )}
+          </>
         )}
       </section>
     </div>
@@ -1486,11 +2827,11 @@ function OperationsView({
           action={<button className="btn" type="button" onClick={onRefresh}><RefreshCcw size={16} />Refresh</button>}
         />
         {runs.length === 0 ? (
-          <EmptyState text="No run evidence yet. Start a demo from Business View." />
+          <EmptyState text="No run evidence yet. Start a demo from Run Console." />
         ) : (
           <div className="run-list">
-            {recentRuns(runs).map((run) => (
-              <RunRow run={run} key={run.id} />
+            {evidenceGroups(runs).map((group) => (
+              <EvidenceGroupView group={group} key={group.domain} />
             ))}
           </div>
         )}
@@ -1675,7 +3016,7 @@ function ArchitectureView({
           subtitle="Follow a run from UI request to agent execution, evidence capture, outcome ledger, and quality scoring."
           action={
             <div className="button-row">
-              <button className="btn" type="button" onClick={() => onViewChange('operations')}>
+              <button className="btn" type="button" onClick={() => onViewChange('evidence')}>
                 <Workflow size={16} /> Inspect trace
               </button>
               <button className="btn" type="button" onClick={() => onViewChange('outcomes')}>
@@ -1783,7 +3124,7 @@ function ArchitectureView({
           title="Architecture Connected to This Session"
           subtitle="Recent runs prove the architecture path: task, agent, provider, trace, quality, and outcome evidence."
           action={
-            <button className="btn" type="button" onClick={() => onViewChange('operations')}>
+            <button className="btn" type="button" onClick={() => onViewChange('evidence')}>
               <RefreshCcw size={16} />Open runs
             </button>
           }
@@ -1816,15 +3157,57 @@ function ArchitectureView({
 
 function SettingsView({
   availableAgentIds,
+  modelPricing,
+  models,
+  onApplyProvider,
+  onRunAgent,
+  onRunScope,
+  onViewChange,
+  provider,
+  providers,
+  runtimeProvider,
   scope,
   selectedAgent,
+  selectedModel,
   setSelectedAgent,
+  setSelectedModel,
+  setProvider,
 }: {
   availableAgentIds: AgentKey[]
+  modelPricing: ModelPricing | undefined
+  models: string[]
+  onApplyProvider: () => void
+  onRunAgent: () => void
+  onRunScope: () => void
+  onViewChange: (view: ViewId) => void
+  provider: ProviderKey
+  providers: ProviderKey[]
+  runtimeProvider: RuntimeProvider | undefined
   scope: RunScope
   selectedAgent: AgentKey
+  selectedModel: string
   setSelectedAgent: (agent: AgentKey) => void
+  setSelectedModel: (model: string) => void
+  setProvider: (provider: ProviderKey) => void
 }) {
+  const selectedProvider = providerCatalog[provider]
+  const estimatedInputTokens = 10000
+  const estimatedOutputTokens = 2500
+  const estimatedRunSeconds = 30
+  const estimatedTokenCost = modelPricing
+    ? (estimatedInputTokens / 1000) * modelPricing.input_cost_per_1k +
+      (estimatedOutputTokens / 1000) * modelPricing.output_cost_per_1k
+    : 0
+  const estimatedApiCost = modelPricing
+    ? (API_CALLS_PER_AGENT_RUN / 1000) * modelPricing.api_call_cost_per_1k
+    : 0
+  const estimatedComputeCost = modelPricing
+    ? estimatedRunSeconds * computeCostPerSecond(modelPricing)
+    : 0
+  const estimatedCost = modelPricing
+    ? estimatedTokenCost + estimatedApiCost + estimatedComputeCost
+    : 0
+
   return (
     <div className="page-stack">
       <section className="section">
@@ -1832,19 +3215,93 @@ function SettingsView({
           icon={<Settings size={18} />}
           label="configuration"
           title="Settings"
-          subtitle="CSS variables control the color scheme. Runtime settings are grouped by operator decision."
+          subtitle="Provider, model, token pricing, and run defaults for the next demo execution."
+          action={
+            <button className="btn primary" type="button" onClick={onApplyProvider}>
+              Apply provider
+            </button>
+          }
         />
         <div className="settings-grid">
+          <SettingPanel title="Provider">
+            <label htmlFor="settings-provider">Provider</label>
+            <select
+              id="settings-provider"
+              value={provider}
+              onChange={(event) => setProvider(event.target.value as ProviderKey)}
+            >
+              {providers.map((item) => (
+                <option value={item} key={item}>
+                  {providerCatalog[item].label}
+                </option>
+              ))}
+            </select>
+            <p>{selectedProvider.description}</p>
+            <div>
+              <span>Runtime status</span>
+              <b>
+                {runtimeProvider
+                  ? runtimeProvider.configured
+                    ? 'Configured'
+                    : 'Needs credentials'
+                  : 'Checking'}
+              </b>
+            </div>
+            <div><span>Next best action</span><b>{selectedProvider.nextAction}</b></div>
+          </SettingPanel>
+
+          <SettingPanel title="Model Pricing">
+            <label htmlFor="settings-model">Model</label>
+            <select
+              id="settings-model"
+              value={selectedModel}
+              onChange={(event) => setSelectedModel(event.target.value)}
+            >
+              {models.map((model) => (
+                <option value={model} key={model}>
+                  {model}
+                </option>
+              ))}
+            </select>
+            <div>
+              <span>Input token price</span>
+              <b>{modelPricing ? `${unitCostMoney(modelPricing.input_cost_per_1k)} / 1K` : 'Not priced'}</b>
+            </div>
+            <div>
+              <span>Output token price</span>
+              <b>{modelPricing ? `${unitCostMoney(modelPricing.output_cost_per_1k)} / 1K` : 'Not priced'}</b>
+            </div>
+            <div>
+              <span>API call price</span>
+              <b>{modelPricing ? `${unitCostMoney(modelPricing.api_call_cost_per_1k)} / 1K` : 'Not priced'}</b>
+            </div>
+            <div>
+              <span>Compute price</span>
+              <b>{modelPricing ? `${unitCostMoney(computeCostPerSecond(modelPricing))} / sec` : 'Not priced'}</b>
+            </div>
+            <div>
+              <span>Total run estimate</span>
+              <b>{modelPricing ? costMoney(estimatedCost) : 'Add pricing row'}</b>
+            </div>
+            <p>
+              Estimate uses {estimatedInputTokens.toLocaleString()} input tokens, {estimatedOutputTokens.toLocaleString()} output tokens, {API_CALLS_PER_AGENT_RUN} API calls, {COMPUTE_VCPU_PER_AGENT_RUN} vCPU, {COMPUTE_MEMORY_GIB_PER_AGENT_RUN} GiB memory, and {estimatedRunSeconds}s runtime.
+            </p>
+          </SettingPanel>
+
           <SettingPanel title="Run Defaults">
-            <div><span>Default scope</span><b>{scopeCopy[scope].label}</b></div>
-            <div><span>Demo mode</span><b>Enterprise walkthrough</b></div>
-            <div><span>Max concurrent agents</span><b>7</b></div>
-          </SettingPanel>
-          <SettingPanel title="Provider and Quality">
-            <div><span>Provider</span><b>Ollama</b></div>
-            <div><span>Model</span><b>llama3.2:latest</b></div>
+            <div><span>Selected scope</span><b>{scopeCopy[scope].label}</b></div>
+            <div><span>Scope agents</span><b>{scopeAgentIds[scope].length}</b></div>
             <div><span>Quality judge</span><b>async</b></div>
+            <div className="setting-actions">
+              <button className="btn" type="button" onClick={() => onViewChange('evidence')}>
+                Inspect trace
+              </button>
+              <button className="btn primary" type="button" onClick={onRunScope}>
+                Run {scopeCopy[scope].label}
+              </button>
+            </div>
           </SettingPanel>
+
           <SettingPanel title="Single Agent">
             <label htmlFor="settings-agent">{scopeCopy[scope].label} agent</label>
             <AgentSelect
@@ -1853,6 +3310,15 @@ function SettingsView({
               value={selectedAgent}
               onChange={(event) => setSelectedAgent(event.target.value as AgentKey)}
             />
+            <p>Use this to validate one agent before running the full selected scope.</p>
+            <div className="setting-actions">
+              <button className="btn" type="button" onClick={() => onViewChange('run')}>
+                Back to run console
+              </button>
+              <button className="btn primary" type="button" onClick={onRunAgent}>
+                Run selected agent
+              </button>
+            </div>
           </SettingPanel>
         </div>
       </section>
@@ -2090,13 +3556,127 @@ function SectionHeader({
   )
 }
 
+const workflowNodeLabels: Record<string, string> = {
+  node_decompose: 'Decompose scope',
+  node_capacity_check: 'Capacity check',
+  node_risk_assess: 'Risk assessment',
+  node_assign: 'Owner assignment',
+  node_synthesize: 'Plan synthesis',
+}
+
+function statusToneFor(status: string) {
+  return status === 'FAILED' ? 'bad' : status === 'COMPLETE' ? 'good' : 'warn'
+}
+
+function runDisplayName(run: AgentRun) {
+  if (workflowNodeLabels[run.agent_id]) return workflowNodeLabels[run.agent_id]
+  const agent = agentCatalog[run.agent_id as AgentKey]
+  return agent?.name ?? run.agent_id
+}
+
+function runTypeLabel(runType: string) {
+  return runType.replace(/_/g, ' ').toLowerCase()
+}
+
+function EvidenceGroupView({ group }: { group: EvidenceGroup }) {
+  const complete = group.items.filter((item) => evidenceRunGroupStatus(item) === 'COMPLETE').length
+  const failed = group.items.filter((item) => evidenceRunGroupStatus(item) === 'FAILED').length
+  const inFlight = group.items.length - complete - failed
+
+  return (
+    <details className="evidence-domain-group" open>
+      <summary className="evidence-domain-head">
+        <div>
+          <span>Execution domain</span>
+          <strong>{group.label}</strong>
+          <em>{group.items.length} agent run{group.items.length === 1 ? '' : 's'} grouped by business capability</em>
+        </div>
+        <div className="evidence-domain-counts" aria-label={`${group.label} run status summary`}>
+          <b>{complete} complete</b>
+          <b>{failed} failed</b>
+          <b>{inFlight} in flight</b>
+        </div>
+        <span className="evidence-domain-toggle" aria-hidden="true" />
+      </summary>
+      <div className="evidence-domain-list">
+        {group.items.map((item) => (
+          <EvidenceRunGroupView group={item} key={evidenceRunGroupKey(item)} />
+        ))}
+      </div>
+    </details>
+  )
+}
+
+function EvidenceRunGroupView({ group }: { group: EvidenceRunGroup }) {
+  if (group.kind === 'workflow') {
+    return <WorkflowRunGroup parent={group.parent} nodes={group.nodes} />
+  }
+  return <RunRow run={group.run} />
+}
+
+function WorkflowRunGroup({ parent, nodes }: { parent: AgentRun; nodes: AgentRun[] }) {
+  const statusTone = statusToneFor(parent.status)
+  const completed = nodes.filter((node) => node.status === 'COMPLETE').length
+  const failed = nodes.filter((node) => node.status === 'FAILED').length
+  const inFlight = nodes.length - completed - failed
+
+  return (
+    <article className="workflow-run-group">
+      <div className="workflow-run-parent">
+        <div>
+          <span>ProjectPlanningAgent workflow</span>
+          <strong>{runDisplayName(parent)}</strong>
+          <em>{runTypeLabel(parent.run_type)} - {parent.model_used}</em>
+        </div>
+        <span className={`status-pill ${statusTone}`}>{parent.status}</span>
+        <dl>
+          <div><dt>Latency</dt><dd>{parent.latency_ms} ms</dd></div>
+          <div><dt>Tokens</dt><dd>{parent.total_tokens}</dd></div>
+          <div><dt>Quality</dt><dd>{parent.quality_score?.toFixed(2) ?? 'pending'}</dd></div>
+        </dl>
+        {parent.error_message && <p className="run-error">{parent.error_message}</p>}
+      </div>
+
+      <div className="workflow-node-summary" aria-label="Workflow node summary">
+        <span>{nodes.length} workflow nodes</span>
+        <b>{completed} complete</b>
+        <b>{failed} failed</b>
+        <b>{inFlight} in flight</b>
+      </div>
+
+      <div className="workflow-node-list">
+        {nodes.length === 0 ? (
+          <p className="workflow-node-empty">Workflow node evidence will appear as the planning run progresses.</p>
+        ) : (
+          nodes.map((node, index) => (
+            <div className="workflow-node-row" key={node.id}>
+              <span className="workflow-node-index">{String(index + 1).padStart(2, '0')}</span>
+              <div className="workflow-node-main">
+                <strong>{runDisplayName(node)}</strong>
+                <span>{node.agent_id} - {node.model_used}</span>
+              </div>
+              <span className={`status-pill ${statusToneFor(node.status)}`}>{node.status}</span>
+              <dl>
+                <div><dt>Latency</dt><dd>{node.latency_ms} ms</dd></div>
+                <div><dt>Tokens</dt><dd>{node.total_tokens}</dd></div>
+                <div><dt>Quality</dt><dd>{node.quality_score?.toFixed(2) ?? 'pending'}</dd></div>
+              </dl>
+              {node.error_message && <p className="run-error">{node.error_message}</p>}
+            </div>
+          ))
+        )}
+      </div>
+    </article>
+  )
+}
+
 function RunRow({ run }: { run: AgentRun }) {
-  const statusTone = run.status === 'FAILED' ? 'bad' : run.status === 'COMPLETE' ? 'good' : 'warn'
+  const statusTone = statusToneFor(run.status)
   return (
     <article className="run-row">
       <div>
-        <strong>{run.agent_id}</strong>
-        <span>{run.run_type} - {run.model_used}</span>
+        <strong>{runDisplayName(run)}</strong>
+        <span>{runTypeLabel(run.run_type)} - {run.model_used}</span>
       </div>
       <span className={`status-pill ${statusTone}`}>{run.status}</span>
       <dl>

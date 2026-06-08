@@ -1,8 +1,7 @@
-import json
 from typing import Any
 
 from app.agentops.context import RunContext
-from app.agents.parsing import JSON_ONLY
+from app.agents.parsing import JSON_ONLY, parse_json_object
 from app.agents.workflow.state import ProjectPlanState
 
 
@@ -27,7 +26,18 @@ and timeline_weeks.
     ctx.raw_response = response.text
     ctx.prompt_tokens = response.usage.prompt_tokens
     ctx.completion_tokens = response.usage.completion_tokens
-    data = json.loads(response.text.strip())
+    data = parse_json_object(
+        response.text,
+        required=[
+            "project_title",
+            "executive_summary",
+            "delivery_confidence",
+            "epics_with_assignments",
+            "top_risks",
+            "key_recommendations",
+            "timeline_weeks",
+        ],
+    )
     state["node_traces"].append(
         {
             "node": "synthesize",

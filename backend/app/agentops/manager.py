@@ -99,7 +99,14 @@ class AgentOpsManager:
                 await self._update_run(db, ctx)
                 await self._write_metrics(db, ctx)
                 if ctx.status == RunStatus.COMPLETE and ctx.output_payload:
-                    await self.outcomes.write_for_run(db, ctx)
+                    try:
+                        await self.outcomes.write_for_run(db, ctx)
+                    except Exception as exc:
+                        ctx.status = RunStatus.FAILED
+                        ctx.error_message = (
+                            f"Outcome calculation failed: {type(exc).__name__}: {exc}"
+                        )
+                        await self._update_run(db, ctx)
                 await db.execute(
                     update(Task)
                     .where(Task.id == ctx.task_id)

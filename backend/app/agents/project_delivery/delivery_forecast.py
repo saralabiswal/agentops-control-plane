@@ -25,9 +25,16 @@ Sprint length: {payload['sprint_length_days']} days
 Known blockers: {payload.get('blockers', [])}
 Team capacity changes: {payload.get('capacity_changes', 'None')}
 
-Return JSON with confidence_score, forecast_delivery_date, days_variance,
-pipeline_at_risk_usd, risk_factors, red_flags, recommended_escalations,
-assumptions, and summary.
+Return one JSON object with these fields:
+- confidence_score: number from 0 to 1
+- forecast_delivery_date: YYYY-MM-DD string
+- days_variance: integer days versus target date
+- pipeline_at_risk_usd: number
+- risk_factors: array of strings
+- red_flags: array of strings
+- recommended_escalations: array of strings
+- assumptions: array of strings, not an object
+- summary: string
 {JSON_ONLY}"""
 
     def parse_output(self, raw_response: str) -> dict[str, Any]:

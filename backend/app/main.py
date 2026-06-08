@@ -15,7 +15,7 @@ from app.core.config import Settings
 from app.core.database import engine
 from app.llm.client import LLMClient
 from app.models import Base
-from app.routers import catalog, metrics, outcomes, runs, sessions, stream, tasks
+from app.routers import catalog, metrics, outcomes, runs, sessions, settings, stream, tasks
 from app.seed.seed import run_seed
 
 __author__ = "Sarala Biswal"
@@ -59,6 +59,7 @@ app.add_middleware(
 
 app.include_router(catalog.router, prefix="/api/v1")
 app.include_router(sessions.router, prefix="/api/v1")
+app.include_router(settings.router, prefix="/api/v1")
 app.include_router(tasks.router, prefix="/api/v1")
 app.include_router(runs.router, prefix="/api/v1")
 app.include_router(outcomes.router, prefix="/api/v1")

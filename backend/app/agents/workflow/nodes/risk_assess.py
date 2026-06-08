@@ -1,8 +1,7 @@
-import json
 from typing import Any
 
 from app.agentops.context import RunContext
-from app.agents.parsing import JSON_ONLY
+from app.agents.parsing import JSON_ONLY, parse_json_object
 from app.agents.workflow.state import ProjectPlanState
 
 
@@ -23,7 +22,10 @@ Return JSON with risk_register, overall_risk_level, and delivery_confidence.
     ctx.raw_response = response.text
     ctx.prompt_tokens = response.usage.prompt_tokens
     ctx.completion_tokens = response.usage.completion_tokens
-    data = json.loads(response.text.strip())
+    data = parse_json_object(
+        response.text,
+        required=["risk_register", "overall_risk_level", "delivery_confidence"],
+    )
     state["node_traces"].append(
         {
             "node": "risk_assess",

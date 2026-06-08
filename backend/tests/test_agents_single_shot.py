@@ -120,6 +120,79 @@ def test_single_shot_parse_rejects_bad_json() -> None:
         agent.parse_output('{"risk_score":0.7}')
 
 
+def test_parse_repairs_truncated_json_response() -> None:
+    agent = make_agent(RenewalRiskAgent)
+
+    parsed = agent.parse_output(
+        '{"risk_score":0.55,"risk_factors":["adoption"],"summary":"Needs CSM review"'
+    )
+
+    assert parsed["summary"] == "Needs CSM review"
+
+
+def test_parse_repairs_nested_truncated_json_response() -> None:
+    agent = make_agent(PipelineForecastAgent)
+
+    parsed = agent.parse_output(
+        '{"attainment_forecast":{"quota_target":2200000},'
+        '"recoverable_gap_usd":{"recoverable_gap_amount_usd":68000},'
+        '"focus_accounts":[{"account":"Apex Industrial"}],'
+        '"summary":"Recoverable gap requires executive action"'
+    )
+
+    assert parsed["recoverable_gap_usd"]["recoverable_gap_amount_usd"] == 68000
+
+
+def test_pipeline_parse_repairs_numeric_expressions() -> None:
+    agent = make_agent(PipelineForecastAgent)
+
+    parsed = agent.parse_output(
+        """
+        {
+          "attainment_forecast": {"quota_target": 2200000},
+          "recoverable_gap_usd": {"recoverable_gap_amount_usd": 68000},
+          "focus_accounts": [
+            {"account": "Apex Industrial", "probability_weighted_arr": 720000 * 0.52}
+          ],
+          "summary": "Quota gap has recoverable late-stage pipeline."
+        }
+        """
+    )
+
+    assert parsed["focus_accounts"][0]["probability_weighted_arr"] == pytest.approx(374400)
+
+
+def test_delivery_forecast_repairs_string_literal_object_assumptions() -> None:
+    agent = make_agent(DeliveryForecastAgent)
+
+    parsed = agent.parse_output(
+        """
+        {
+          "confidence_score": 0.72,
+          "forecast_delivery_date": "2026-08-15",
+          "days_variance": 29,
+          "pipeline_at_risk_usd": 950000,
+          "risk_factors": [
+            "Production support team is understaffed.",
+            "SOC2 evidence package is missing two controls."
+          ],
+          "red_flags": ["Fraud-service performance test has not passed"],
+          "recommended_escalations": ["Re-prioritize production support"],
+          "assumptions": {
+            "historical sprint velocity is stable",
+            "Team can adjust to the new workload distribution"
+          },
+          "summary": "Milestone forecast indicates delay risk."
+        }
+        """
+    )
+
+    assert parsed["assumptions"] == [
+        "historical sprint velocity is stable",
+        "Team can adjust to the new workload distribution",
+    ]
+
+
 @pytest.mark.asyncio
 async def test_base_agent_run_uses_agentops_contract(agentops, session_task) -> None:
     _session, task, _agent, pricing = session_task

@@ -52,10 +52,7 @@ class ProjectPlanningAgent:
                 parent_run_id=state["parent_run_id"],
             ) as ctx:
                 updated_state = await node_fn(state, ctx, self.llm)
-                ctx.output_payload = {
-                    "node": node_agent_id.removeprefix("node_"),
-                    "status": "complete",
-                }
+                ctx.output_payload = _node_output_payload(node_agent_id, updated_state)
             if ctx.error_message:
                 raise RuntimeError(ctx.error_message)
             return updated_state
@@ -101,3 +98,23 @@ class ProjectPlanningAgent:
             if resolved_models:
                 ctx.model_used = resolved_models[-1]
             ctx.output_payload = final_state.get("final_plan") or {}
+
+
+def _node_output_payload(node_agent_id: str, state: ProjectPlanState) -> dict[str, Any]:
+    payload: dict[str, Any] = {
+        "node": node_agent_id.removeprefix("node_"),
+        "status": "complete",
+    }
+    node_outputs = {
+        "node_decompose": state.get("work_breakdown"),
+        "node_capacity_check": state.get("capacity_assessment"),
+        "node_risk_assess": state.get("risk_register"),
+        "node_assign": state.get("assigned_plan"),
+        "node_synthesize": state.get("final_plan"),
+    }
+    output = node_outputs.get(node_agent_id)
+    if isinstance(output, dict):
+        payload.update(output)
+    elif output is not None:
+        payload["result"] = output
+    return payload

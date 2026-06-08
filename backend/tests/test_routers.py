@@ -33,6 +33,33 @@ def test_catalog_and_session_endpoints(client) -> None:
     assert client.post(f"/api/v1/sessions/{session_id}/close").status_code == 200
 
 
+def test_runtime_settings_endpoints(client) -> None:
+    listed = client.get("/api/v1/settings/runtime")
+    assert listed.status_code == 200
+    body = listed.json()
+    assert body["active_provider"] == "ollama"
+    assert body["active_model"] == "llama3.2:3b"
+    providers = {item["provider"]: item for item in body["providers"]}
+    assert set(providers) == {"ollama", "groq", "gemini"}
+    assert "llama3.2:latest" in providers["ollama"]["models"]
+
+    updated = client.patch(
+        "/api/v1/settings/runtime",
+        json={"active_provider": "ollama", "model_name": "llama3.2:latest"},
+    )
+    assert updated.status_code == 200
+    assert updated.json()["active_model"] == "llama3.2:latest"
+    assert client.app.state.settings.ollama_model == "llama3.2:latest"
+
+    client.app.state.settings.groq_api_key = ""
+    rejected = client.patch(
+        "/api/v1/settings/runtime",
+        json={"active_provider": "groq", "model_name": "llama-3.3-70b-versatile"},
+    )
+    assert rejected.status_code == 400
+    assert "Groq is not configured" in rejected.json()["detail"]
+
+
 def test_metrics_and_outcome_summary_endpoints(client) -> None:
     assert client.get("/api/v1/metrics/cost").status_code == 200
     assert client.get("/api/v1/metrics/quality").status_code == 200
