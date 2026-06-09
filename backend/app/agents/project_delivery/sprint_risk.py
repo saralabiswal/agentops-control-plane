@@ -21,6 +21,9 @@ Days remaining: {payload['days_remaining']}
 Total tasks: {payload['total_tasks']}
 Completed tasks: {payload['completed_tasks']}
 Velocity (last 3 sprints): {payload['velocity_history']} tasks/sprint
+Remaining engineering hours: {payload.get('remaining_engineering_hours', 'Unknown')}
+Available engineering hours: {payload.get('available_engineering_hours', 'Unknown')}
+Remaining story points: {payload.get('remaining_story_points', 'Unknown')}
 External dependencies: {payload.get('external_dependencies', [])}
 Team capacity notes: {payload.get('capacity_notes', 'None')}
 

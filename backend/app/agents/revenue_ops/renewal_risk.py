@@ -17,6 +17,8 @@ Actionability: Each action specifies owner, urgency, and expected impact.
 
 Account: {payload['account_name']}
 ARR: ${payload['account_arr']:,}
+Renewal ARR: ${payload.get('renewal_arr_usd', payload['account_arr']):,}
+Expansion ARR: ${payload.get('expansion_arr_usd', 0):,}
 Contract end date: {payload['contract_end_date']}
 Days to renewal: {payload['days_to_renewal']}
 Login frequency (last 30 days): {payload['login_frequency_30d']} sessions
@@ -25,9 +27,12 @@ Support tickets (last 90 days): {payload['support_tickets_90d']}
 NPS score: {payload.get('nps_score', 'Unknown')}
 Last CSM touchpoint: {payload.get('last_csm_touchpoint', 'Unknown')}
 Upsell conversations: {payload.get('upsell_conversations', 0)}
+Account owner: {payload.get('account_owner', 'Unknown')}
+CSM owner: {payload.get('csm_owner', 'Unknown')}
+Executive sponsor: {payload.get('exec_sponsor', 'Unknown')}
 
 Return JSON with risk_score, risk_level, pipeline_protected_usd, risk_factors,
-recommended_actions, and summary.
+recommended_actions, confidence_score, and summary.
 {JSON_ONLY}"""
 
     def parse_output(self, raw_response: str) -> dict[str, Any]:

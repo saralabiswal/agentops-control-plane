@@ -61,6 +61,30 @@ async def test_quality_judge_handles_bad_json_gracefully() -> None:
 
 
 @pytest.mark.asyncio
+async def test_quality_judge_normalizes_nested_and_percent_scores() -> None:
+    llm = FakeLLM(
+        [
+            llm_response(
+                '{"relevance":{"score":85},"faithfulness":{"value":"90%"},'
+                '"completeness":{"details":{"rating":0.7}},'
+                '"actionability":[{"score":65}],'
+                '"reasoning_trace":{"summary":"Nested judge payload."}}'
+            )
+        ]
+    )
+    judge = QualityJudgeAgent(llm)
+
+    scores = await judge.score(context())
+
+    assert scores["quality_score"] == pytest.approx(0.775)
+    assert scores["quality_relevance"] == 0.85
+    assert scores["quality_faithfulness"] == 0.9
+    assert scores["quality_completeness"] == 0.7
+    assert scores["quality_actionability"] == 0.65
+    assert "Nested judge payload" in scores["quality_dimensions"]["reasoning_trace"]
+
+
+@pytest.mark.asyncio
 async def test_quality_queue_worker_updates_run_and_emits_sse(session_task) -> None:
     session, task, agent, pricing = session_task
     ctx = context()

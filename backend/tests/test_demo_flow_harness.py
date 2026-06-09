@@ -66,6 +66,9 @@ def _project_payloads(fixture: dict) -> list[tuple[str, dict]]:
                     "total_tasks",
                     "completed_tasks",
                     "velocity_history",
+                    "remaining_engineering_hours",
+                    "remaining_story_points",
+                    "available_engineering_hours",
                     "external_dependencies",
                     "capacity_notes",
                     "delay_cost_per_week_usd",
@@ -80,6 +83,8 @@ def _project_payloads(fixture: dict) -> list[tuple[str, dict]]:
                     "tasks",
                     "team_members",
                     "sprint_weeks",
+                    "remaining_engineering_hours",
+                    "available_engineering_hours",
                     "avg_task_hours",
                     "hourly_rate",
                 ]
@@ -126,6 +131,8 @@ def _revenue_payloads(fixture: dict) -> list[tuple[str, dict]]:
                 for key in [
                     "account_name",
                     "account_arr",
+                    "renewal_arr_usd",
+                    "expansion_arr_usd",
                     "contract_end_date",
                     "days_to_renewal",
                     "login_frequency_30d",
@@ -135,26 +142,34 @@ def _revenue_payloads(fixture: dict) -> list[tuple[str, dict]]:
                     "last_csm_touchpoint",
                     "upsell_conversations",
                     "historical_save_rate",
+                    "account_owner",
+                    "csm_owner",
+                    "exec_sponsor",
                 ]
             },
         ),
         (
             "agent-churn-signal",
             {
-                key: fixture[key]
-                for key in [
-                    "account_name",
-                    "account_arr",
-                    "contract_end_date",
-                    "days_to_renewal",
-                    "login_trend",
-                    "adoption_trend",
-                    "ticket_sentiment",
-                    "exec_engagement",
-                    "competitor_mentions",
-                    "contract_downloads",
-                    "early_intervention_value",
-                ]
+                "account_name": fixture.get("churn_account_name", fixture["account_name"]),
+                "account_arr": fixture.get("churn_account_arr", fixture["account_arr"]),
+                **{
+                    key: fixture[key]
+                    for key in [
+                        "contract_end_date",
+                        "days_to_renewal",
+                        "login_trend",
+                        "adoption_trend",
+                        "ticket_sentiment",
+                        "exec_engagement",
+                        "competitor_mentions",
+                        "contract_downloads",
+                        "early_intervention_value",
+                        "account_owner",
+                        "csm_owner",
+                        "exec_sponsor",
+                    ]
+                },
             },
         ),
         (
@@ -164,6 +179,9 @@ def _revenue_payloads(fixture: dict) -> list[tuple[str, dict]]:
                 for key in [
                     "rep_name",
                     "quota_target",
+                    "closed_to_date_usd",
+                    "commit_pipeline_usd",
+                    "best_case_pipeline_usd",
                     "quarter_close_date",
                     "days_remaining",
                     "historical_close_rate",

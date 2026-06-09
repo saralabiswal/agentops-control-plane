@@ -44,23 +44,23 @@ actionability, composite, and reasoning_trace.
                     "reasoning_trace": f"Judge failed: {type(exc).__name__}: {exc}"
                 },
             }
+        relevance = self._dimension_score(scores.get("relevance"))
+        faithfulness = self._dimension_score(scores.get("faithfulness"))
+        completeness = self._dimension_score(scores.get("completeness"))
+        actionability = self._dimension_score(scores.get("actionability"))
         composite = round(
-            (
-                float(scores.get("relevance", 0))
-                + float(scores.get("faithfulness", 0))
-                + float(scores.get("completeness", 0))
-                + float(scores.get("actionability", 0))
-            )
-            / 4,
+            (relevance + faithfulness + completeness + actionability) / 4,
             3,
         )
         return {
             "quality_score": composite,
-            "quality_relevance": float(scores.get("relevance", 0)),
-            "quality_faithfulness": float(scores.get("faithfulness", 0)),
-            "quality_completeness": float(scores.get("completeness", 0)),
-            "quality_actionability": float(scores.get("actionability", 0)),
-            "quality_dimensions": {"reasoning_trace": scores.get("reasoning_trace", "")},
+            "quality_relevance": relevance,
+            "quality_faithfulness": faithfulness,
+            "quality_completeness": completeness,
+            "quality_actionability": actionability,
+            "quality_dimensions": {
+                "reasoning_trace": self._reasoning_trace(scores.get("reasoning_trace"))
+            },
         }
 
     async def _rubric_for(self, agent_id: str) -> str:
@@ -69,3 +69,41 @@ actionability, composite, and reasoning_trace.
                 select(AgentDefinition.quality_rubric).where(AgentDefinition.id == agent_id)
             )
         return result or "Evaluate relevance, faithfulness, completeness, and actionability."
+
+    def _dimension_score(self, value: Any) -> float:
+        if isinstance(value, (int, float)):
+            return self._rate(float(value))
+        if isinstance(value, str):
+            normalized = value.replace("%", "").strip()
+            if not normalized:
+                return 0.0
+            try:
+                return self._rate(float(normalized))
+            except ValueError:
+                return 0.0
+        if isinstance(value, dict):
+            for key in ("score", "value", "rating", "confidence"):
+                if key in value:
+                    return self._dimension_score(value[key])
+            for nested in value.values():
+                score = self._dimension_score(nested)
+                if score > 0:
+                    return score
+        if isinstance(value, list):
+            for nested in value:
+                score = self._dimension_score(nested)
+                if score > 0:
+                    return score
+        return 0.0
+
+    def _rate(self, value: float) -> float:
+        if value > 1:
+            value = value / 100
+        return min(max(value, 0.0), 1.0)
+
+    def _reasoning_trace(self, value: Any) -> str:
+        if isinstance(value, str):
+            return value
+        if value is None:
+            return ""
+        return json.dumps(value, sort_keys=True)

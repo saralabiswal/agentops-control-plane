@@ -18,10 +18,12 @@ Actionability: Each assignment includes reasoning and an efficiency gain estimat
 Tasks to assign: {payload['tasks']}
 Team members and availability: {payload['team_members']}
 Sprint duration: {payload['sprint_weeks']} weeks
+Remaining engineering hours: {payload.get('remaining_engineering_hours', 'Unknown')}
+Available engineering hours: {payload.get('available_engineering_hours', 'Unknown')}
 
 Assign each task by skill match, capacity, risk, and learning opportunities.
 Return JSON with assignments, overloaded_members, underutilized_members,
-efficiency_gain_pct, hours_saved_estimate, and summary.
+efficiency_gain_pct, hours_saved_estimate, confidence_score, and summary.
 {JSON_ONLY}"""
 
     def parse_output(self, raw_response: str) -> dict[str, Any]:

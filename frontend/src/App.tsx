@@ -5,6 +5,7 @@ import {
   BarChart3,
   Boxes,
   Cpu,
+  Database,
   DollarSign,
   FileText,
   Layers3,
@@ -37,7 +38,7 @@ const COMPUTE_VCPU_PER_AGENT_RUN = 1
 const COMPUTE_MEMORY_GIB_PER_AGENT_RUN = 0.5
 
 type RunScope = 'platform' | 'project' | 'revenue'
-type ViewId = 'story' | 'outcomes' | 'run' | 'evidence' | 'architecture' | 'settings' | 'backlog'
+type ViewId = 'story' | 'outcomes' | 'data' | 'run' | 'evidence' | 'architecture' | 'settings'
 type ProviderKey = 'ollama' | 'groq' | 'gemini'
 
 type AgentKey =
@@ -186,21 +187,23 @@ const agentCatalog: Record<AgentKey, AgentConfig> = {
     shortDomain: 'Project Management',
     description: 'Assesses sprint risk, delivery confidence, and mitigations.',
     payload: {
-      sprint_name: 'Orion v4.2 Launch Readiness',
-      customer: 'FirstWest Bank',
-      business_context: 'Mobile onboarding launch tied to contracted digital account opening revenue.',
-      team_size: 7,
-      days_remaining: 9,
-      total_tasks: 31,
-      completed_tasks: 14,
-      velocity_history: [21, 19, 16],
+      sprint_name: 'Northstar Portal Phase 1',
+      customer: 'Harbor Retail Group',
+      business_context: 'Customer portal launch supports a $520K services commitment before the summer retail peak.',
+      team_size: 4,
+      days_remaining: 10,
+      total_tasks: 18,
+      completed_tasks: 7,
+      velocity_history: [12, 10, 8],
+      remaining_engineering_hours: 238,
+      remaining_story_points: 34,
+      available_engineering_hours: 192,
       external_dependencies: [
-        'Identity provider production certificate',
-        'Fraud-service rate limit approval',
-        'Security exception sign-off',
+        'Customer SSO metadata approval',
+        'Claims export file from operations',
       ],
-      capacity_notes: 'Tech lead is at 60% due to Sev-2 support; QA lead is split with release audit.',
-      delay_cost_per_week_usd: 185000,
+      capacity_notes: 'Frontend engineer is 80% available; QA is shared with production release support.',
+      delay_cost_per_week_usd: 62000,
     },
   },
   'agent-resource-alloc': {
@@ -211,21 +214,26 @@ const agentCatalog: Record<AgentKey, AgentConfig> = {
     description: 'Optimizes task-to-person assignment across skills and capacity.',
     payload: {
       tasks: [
-        { id: 'OIDC-214', skill: 'identity', estimate_hours: 24, priority: 'HIGH' },
-        { id: 'FRAUD-88', skill: 'backend', estimate_hours: 28, priority: 'HIGH' },
-        { id: 'SEC-72', skill: 'security', estimate_hours: 18, priority: 'HIGH' },
-        { id: 'QA-140', skill: 'quality', estimate_hours: 20, priority: 'HIGH' },
-        { id: 'REL-31', skill: 'release', estimate_hours: 12, priority: 'NORMAL' },
+        { id: 'AUTH-41', skill: 'identity', estimate_hours: 22, priority: 'HIGH' },
+        { id: 'PORTAL-87', skill: 'frontend', estimate_hours: 30, priority: 'HIGH' },
+        { id: 'CLAIMS-54', skill: 'backend', estimate_hours: 28, priority: 'HIGH' },
+        { id: 'QA-218', skill: 'quality', estimate_hours: 24, priority: 'HIGH' },
+        { id: 'OPS-33', skill: 'enablement', estimate_hours: 14, priority: 'NORMAL' },
+        { id: 'OBS-18', skill: 'observability', estimate_hours: 16, priority: 'NORMAL' },
+        { id: 'UAT-12', skill: 'customer-success', estimate_hours: 18, priority: 'HIGH' },
+        { id: 'REL-47', skill: 'release', estimate_hours: 12, priority: 'NORMAL' },
       ],
       team_members: [
-        { name: 'Asha Rao', skills: ['identity', 'backend', 'security'], load_pct: 82 },
-        { name: 'Mateo Cruz', skills: ['backend', 'release'], load_pct: 68 },
-        { name: 'Lina Park', skills: ['quality', 'automation', 'security'], load_pct: 76 },
-        { name: 'Devon Shah', skills: ['release', 'observability', 'backend'], load_pct: 55 },
+        { name: 'Iris Chen', role: 'Full-stack Lead', skills: ['identity', 'backend', 'frontend'], load_pct: 74, availability_pct: 80 },
+        { name: 'Samir Gupta', role: 'Frontend Engineer', skills: ['frontend', 'release'], load_pct: 68, availability_pct: 80 },
+        { name: 'Marta Silva', role: 'QA Analyst', skills: ['quality', 'customer-success'], load_pct: 72, availability_pct: 50 },
+        { name: 'Theo Martin', role: 'Backend Engineer', skills: ['backend', 'observability', 'enablement'], load_pct: 61, availability_pct: 90 },
       ],
-      sprint_weeks: 3,
-      avg_task_hours: 20,
-      hourly_rate: 165,
+      sprint_weeks: 2,
+      remaining_engineering_hours: 238,
+      available_engineering_hours: 192,
+      avg_task_hours: 22,
+      hourly_rate: 145,
     },
   },
   'agent-delivery-forecast': {
@@ -235,18 +243,18 @@ const agentCatalog: Record<AgentKey, AgentConfig> = {
     shortDomain: 'Project Management',
     description: 'Forecasts milestone confidence and delivery-linked revenue exposure.',
     payload: {
-      milestone_name: 'Orion v4.2 FirstWest Bank launch',
-      committed_revenue_usd: 1250000,
-      target_date: '2026-07-18',
-      current_date: '2026-06-07',
-      backlog_count: 42,
-      avg_velocity: 17,
+      milestone_name: 'Northstar phase-1 customer portal go-live',
+      committed_revenue_usd: 520000,
+      target_date: '2026-07-08',
+      current_date: '2026-06-09',
+      backlog_count: 23,
+      avg_velocity: 9,
       sprint_length_days: 14,
       blockers: [
-        'Fraud-service performance test has not passed at target volume',
-        'Final SOC2 evidence package is missing two controls',
+        'SSO metadata has not been approved by customer IT',
+        'Claims export sample is missing production edge cases',
       ],
-      capacity_changes: 'Two engineers are covering production support until June 14.',
+      capacity_changes: 'QA analyst is available 50% until June 17 due to release support.',
     },
   },
   'agent-project-planning': {
@@ -257,15 +265,15 @@ const agentCatalog: Record<AgentKey, AgentConfig> = {
     description: 'Runs the 5-node planning workflow from instruction to full plan.',
     payload: {
       instruction:
-        'Create a recovery plan for Orion v4.2 launch readiness with epics for identity, fraud-service readiness, security evidence, QA automation, owners, risk tradeoffs, and executive decision points.',
+        'Create a recovery plan for Northstar portal phase 1 with epics for SSO, claims export, customer UAT, release readiness, named owners, risk tradeoffs, and executive decision points.',
       team_members: [
-        { name: 'Asha Rao', skills: ['identity', 'backend', 'security'], availability_pct: 70 },
-        { name: 'Mateo Cruz', skills: ['backend', 'release'], availability_pct: 85 },
-        { name: 'Lina Park', skills: ['quality', 'automation', 'security'], availability_pct: 75 },
-        { name: 'Devon Shah', skills: ['release', 'observability', 'backend'], availability_pct: 90 },
+        { name: 'Iris Chen', role: 'Full-stack Lead', skills: ['identity', 'backend', 'frontend'], availability_pct: 80 },
+        { name: 'Samir Gupta', role: 'Frontend Engineer', skills: ['frontend', 'release'], availability_pct: 80 },
+        { name: 'Marta Silva', role: 'QA Analyst', skills: ['quality', 'customer-success'], availability_pct: 50 },
+        { name: 'Theo Martin', role: 'Backend Engineer', skills: ['backend', 'observability', 'enablement'], availability_pct: 90 },
       ],
-      timeline_weeks: 6,
-      committed_revenue_usd: 1250000,
+      timeline_weeks: 4,
+      committed_revenue_usd: 520000,
     },
   },
   'agent-renewal-risk': {
@@ -277,9 +285,11 @@ const agentCatalog: Record<AgentKey, AgentConfig> = {
     payload: {
       account_name: 'Acme Financial',
       account_arr: 900000,
+      renewal_arr_usd: 900000,
+      expansion_arr_usd: 260000,
       segment: 'Enterprise Financial Services',
       contract_end_date: '2026-09-30',
-      days_to_renewal: 116,
+      days_to_renewal: 113,
       login_frequency_30d: 18,
       feature_adoption_score: 5.7,
       support_tickets_90d: 14,
@@ -287,6 +297,9 @@ const agentCatalog: Record<AgentKey, AgentConfig> = {
       last_csm_touchpoint: '2026-05-08',
       upsell_conversations: 0,
       historical_save_rate: 0.42,
+      account_owner: 'Jordan Lee',
+      csm_owner: 'Rhea Morgan',
+      exec_sponsor: 'Daniel Kim',
     },
   },
   'agent-churn-signal': {
@@ -298,8 +311,8 @@ const agentCatalog: Record<AgentKey, AgentConfig> = {
     payload: {
       account_name: 'Acme Financial',
       account_arr: 900000,
-      contract_end_date: '2026-08-31',
-      days_to_renewal: 86,
+      contract_end_date: '2026-09-30',
+      days_to_renewal: 113,
       login_trend: 'finance admin usage down 38% over 30 days',
       adoption_trend: 'invoice automation flat, reporting exports increasing',
       ticket_sentiment: 'negative',
@@ -307,6 +320,9 @@ const agentCatalog: Record<AgentKey, AgentConfig> = {
       competitor_mentions: 3,
       contract_downloads: 2,
       early_intervention_value: 0.45,
+      account_owner: 'Jordan Lee',
+      csm_owner: 'Rhea Morgan',
+      exec_sponsor: 'Daniel Kim',
     },
   },
   'agent-pipeline-forecast': {
@@ -318,8 +334,11 @@ const agentCatalog: Record<AgentKey, AgentConfig> = {
     payload: {
       rep_name: 'Jordan Lee',
       quota_target: 1800000,
+      closed_to_date_usd: 620000,
+      commit_pipeline_usd: 430000,
+      best_case_pipeline_usd: 1060000,
       quarter_close_date: '2026-06-30',
-      days_remaining: 23,
+      days_remaining: 21,
       historical_close_rate: 0.31,
       avg_sales_cycle_days: 52,
       pipeline_deals: [
@@ -350,6 +369,15 @@ const agentCatalog: Record<AgentKey, AgentConfig> = {
           risk: 'budget approval moved to July',
           next_step: 'RevOps to rebuild value case with usage data',
         },
+        {
+          account: 'Northport Insurance',
+          arr: 280000,
+          crm_probability: 0.28,
+          stage: 'Solution validation',
+          close_plan: 'claims automation pilot results due next week',
+          risk: 'pilot sponsor has not confirmed success criteria',
+          next_step: 'AE and SE to complete pilot scorecard',
+        },
       ],
     },
   },
@@ -363,11 +391,11 @@ const scopeAgentIds: Record<RunScope, AgentKey[]> = {
 
 const projectScenarios: DemoScenario[] = [
   {
-    id: 'orion-launch',
+    id: 'northstar-portal',
     domain: 'project',
-    title: 'Orion v4.2 bank launch recovery',
+    title: 'Northstar $520K portal launch',
     summary:
-      'FirstWest Bank launch has identity, fraud-service, and security evidence risk against $1.25M in booked delivery value.',
+      'Harbor Retail portal launch has SSO, claims export, and QA capacity risk against $520K in booked services value.',
     payloads: {
       'agent-sprint-risk': agentCatalog['agent-sprint-risk'].payload,
       'agent-resource-alloc': agentCatalog['agent-resource-alloc'].payload,
@@ -376,67 +404,89 @@ const projectScenarios: DemoScenario[] = [
     },
   },
   {
-    id: 'cpq-stabilization',
+    id: 'orion-launch',
     domain: 'project',
-    title: 'GlobalTel CPQ stabilization',
+    title: 'Orion v4.2 $1.25M bank launch',
     summary:
-      'Pricing defects are delaying enterprise renewal quotes and need a controlled recovery plan before month-end close.',
+      'FirstWest Bank launch has identity, fraud-service, mobile, and security evidence risk against $1.25M in booked delivery value.',
     payloads: {
       'agent-sprint-risk': {
-        sprint_name: 'CPQ Stabilization 6.1',
-        team_size: 5,
-        days_remaining: 6,
-        total_tasks: 20,
-        completed_tasks: 7,
-        velocity_history: [13, 11, 9],
+        sprint_name: 'Orion v4.2 Launch Readiness',
+        team_size: 7,
+        days_remaining: 12,
+        total_tasks: 52,
+        completed_tasks: 23,
+        velocity_history: [24, 21, 18],
+        remaining_engineering_hours: 612,
+        remaining_story_points: 91,
+        available_engineering_hours: 470,
         external_dependencies: [
-          'ERP tax service regression sign-off',
-          'Discount approval matrix from Revenue Ops',
+          'Identity provider production certificate',
+          'Fraud-service rate limit approval',
+          'Security exception sign-off',
         ],
-        capacity_notes: 'Pricing architect is split across two escalations',
-        delay_cost_per_week_usd: 140000,
+        capacity_notes: 'Tech lead is at 60% due to Sev-2 support; QA lead is split with release audit.',
+        delay_cost_per_week_usd: 185000,
       },
       'agent-resource-alloc': {
         tasks: [
-          { id: 'CPQ-118', skill: 'pricing', estimate_hours: 22, priority: 'HIGH' },
-          { id: 'ERP-44', skill: 'integration', estimate_hours: 18, priority: 'HIGH' },
-          { id: 'QA-91', skill: 'quality', estimate_hours: 16, priority: 'HIGH' },
-          { id: 'REV-27', skill: 'pricing', estimate_hours: 12, priority: 'HIGH' },
-          { id: 'DOC-12', skill: 'enablement', estimate_hours: 8, priority: 'NORMAL' },
+          { id: 'OIDC-214', skill: 'identity', estimate_hours: 28, priority: 'HIGH' },
+          { id: 'OIDC-219', skill: 'identity', estimate_hours: 18, priority: 'HIGH' },
+          { id: 'FRAUD-88', skill: 'backend', estimate_hours: 36, priority: 'HIGH' },
+          { id: 'FRAUD-91', skill: 'backend', estimate_hours: 30, priority: 'HIGH' },
+          { id: 'SEC-72', skill: 'security', estimate_hours: 24, priority: 'HIGH' },
+          { id: 'SEC-76', skill: 'security', estimate_hours: 18, priority: 'HIGH' },
+          { id: 'QA-140', skill: 'quality', estimate_hours: 34, priority: 'HIGH' },
+          { id: 'QA-143', skill: 'automation', estimate_hours: 26, priority: 'HIGH' },
+          { id: 'MOB-302', skill: 'mobile', estimate_hours: 32, priority: 'HIGH' },
+          { id: 'REL-31', skill: 'release', estimate_hours: 16, priority: 'NORMAL' },
+          { id: 'OBS-44', skill: 'observability', estimate_hours: 20, priority: 'NORMAL' },
+          { id: 'UAT-27', skill: 'customer-success', estimate_hours: 18, priority: 'NORMAL' },
         ],
         team_members: [
-          { name: 'Priya Nair', skills: ['pricing', 'backend'], load_pct: 86 },
-          { name: 'Noah Brooks', skills: ['integration', 'quality'], load_pct: 62 },
-          { name: 'Elena Rossi', skills: ['quality', 'enablement'], load_pct: 58 },
+          { name: 'Asha Rao', role: 'Tech Lead', skills: ['identity', 'backend', 'security'], load_pct: 82, availability_pct: 60 },
+          { name: 'Mateo Cruz', role: 'Senior Backend Engineer', skills: ['backend', 'release'], load_pct: 68, availability_pct: 85 },
+          { name: 'Lina Park', role: 'QA Lead', skills: ['quality', 'automation', 'security'], load_pct: 76, availability_pct: 70 },
+          { name: 'Devon Shah', role: 'Platform Engineer', skills: ['release', 'observability', 'backend'], load_pct: 55, availability_pct: 90 },
+          { name: 'Camila Torres', role: 'Mobile Engineer', skills: ['mobile', 'frontend', 'quality'], load_pct: 63, availability_pct: 85 },
+          { name: 'Ben Wallace', role: 'Security Engineer', skills: ['security', 'identity'], load_pct: 70, availability_pct: 75 },
+          { name: 'Rina Okafor', role: 'Implementation Manager', skills: ['customer-success', 'release', 'enablement'], load_pct: 64, availability_pct: 80 },
         ],
-        sprint_weeks: 2,
-        avg_task_hours: 16,
-        hourly_rate: 155,
+        sprint_weeks: 3,
+        remaining_engineering_hours: 612,
+        available_engineering_hours: 470,
+        avg_task_hours: 24,
+        hourly_rate: 165,
       },
       'agent-delivery-forecast': {
-        milestone_name: 'GlobalTel CPQ renewal quote readiness',
-        committed_revenue_usd: 780000,
-        target_date: '2026-07-03',
-        current_date: '2026-06-07',
-        backlog_count: 27,
-        avg_velocity: 10,
+        milestone_name: 'Orion v4.2 FirstWest Bank launch',
+        committed_revenue_usd: 1250000,
+        target_date: '2026-07-18',
+        current_date: '2026-06-09',
+        backlog_count: 58,
+        avg_velocity: 20,
         sprint_length_days: 14,
         blockers: [
-          'Tax-service sandbox data differs from production',
-          'Regression environment is unstable during nightly runs',
+          'Fraud-service performance test has not passed at target volume',
+          'Final SOC2 evidence package is missing two controls',
+          'Mobile app release candidate is waiting on bank branding approval',
         ],
-        capacity_changes: 'Pricing architect available 60%; QA lead available 80%',
+        capacity_changes: 'Two engineers are covering production support until June 14.',
       },
       'agent-project-planning': {
         instruction:
-          'Create a CPQ stabilization plan covering pricing defect correction, ERP tax validation, regression hardening, renewal quote readiness, owners, and executive escalation gates.',
+          'Create a recovery plan for Orion v4.2 launch readiness with epics for identity, fraud-service readiness, security evidence, mobile release, QA automation, owners, risk tradeoffs, and executive decision points.',
         team_members: [
-          { name: 'Priya Nair', skills: ['pricing', 'backend'], availability_pct: 65 },
-          { name: 'Noah Brooks', skills: ['integration', 'quality'], availability_pct: 85 },
-          { name: 'Elena Rossi', skills: ['quality', 'enablement'], availability_pct: 80 },
+          { name: 'Asha Rao', role: 'Tech Lead', skills: ['identity', 'backend', 'security'], availability_pct: 60 },
+          { name: 'Mateo Cruz', role: 'Senior Backend Engineer', skills: ['backend', 'release'], availability_pct: 85 },
+          { name: 'Lina Park', role: 'QA Lead', skills: ['quality', 'automation', 'security'], availability_pct: 70 },
+          { name: 'Devon Shah', role: 'Platform Engineer', skills: ['release', 'observability', 'backend'], availability_pct: 90 },
+          { name: 'Camila Torres', role: 'Mobile Engineer', skills: ['mobile', 'frontend', 'quality'], availability_pct: 85 },
+          { name: 'Ben Wallace', role: 'Security Engineer', skills: ['security', 'identity'], availability_pct: 75 },
+          { name: 'Rina Okafor', role: 'Implementation Manager', skills: ['customer-success', 'release', 'enablement'], availability_pct: 80 },
         ],
-        timeline_weeks: 4,
-        committed_revenue_usd: 780000,
+        timeline_weeks: 6,
+        committed_revenue_usd: 1250000,
       },
     },
   },
@@ -445,52 +495,74 @@ const projectScenarios: DemoScenario[] = [
     domain: 'project',
     title: 'Summit Energy cloud cutover',
     summary:
-      'Atlas migration cutover has replication, DR, and platform capacity pressure against $1.35M in contracted launch value.',
+      'Atlas migration cutover has replication, DR, security, and platform capacity pressure against $2.4M in contracted launch value.',
     payloads: {
       'agent-sprint-risk': {
         sprint_name: 'Atlas Migration Cutover',
-        team_size: 8,
-        days_remaining: 11,
-        total_tasks: 34,
-        completed_tasks: 13,
-        velocity_history: [22, 18, 15],
+        team_size: 10,
+        days_remaining: 15,
+        total_tasks: 76,
+        completed_tasks: 31,
+        velocity_history: [31, 28, 23],
+        remaining_engineering_hours: 1118,
+        remaining_story_points: 168,
+        available_engineering_hours: 860,
         external_dependencies: [
           'Network allowlist approval',
           'Database replication freeze window',
           'Customer DR test window',
+          'Security architecture review',
         ],
         capacity_notes: 'Two platform engineers are on incident rotation',
-        delay_cost_per_week_usd: 210000,
+        delay_cost_per_week_usd: 320000,
       },
       'agent-resource-alloc': {
         tasks: [
-          { id: 'NET-31', skill: 'network', estimate_hours: 20, priority: 'HIGH' },
-          { id: 'DB-82', skill: 'database', estimate_hours: 26, priority: 'HIGH' },
-          { id: 'CUT-17', skill: 'platform', estimate_hours: 18, priority: 'HIGH' },
-          { id: 'DR-22', skill: 'reliability', estimate_hours: 20, priority: 'HIGH' },
-          { id: 'OBS-09', skill: 'observability', estimate_hours: 12, priority: 'NORMAL' },
+          { id: 'NET-31', skill: 'network', estimate_hours: 26, priority: 'HIGH' },
+          { id: 'NET-37', skill: 'network', estimate_hours: 22, priority: 'HIGH' },
+          { id: 'DB-82', skill: 'database', estimate_hours: 42, priority: 'HIGH' },
+          { id: 'DB-91', skill: 'database', estimate_hours: 38, priority: 'HIGH' },
+          { id: 'CUT-17', skill: 'platform', estimate_hours: 34, priority: 'HIGH' },
+          { id: 'CUT-23', skill: 'platform', estimate_hours: 32, priority: 'HIGH' },
+          { id: 'DR-22', skill: 'reliability', estimate_hours: 36, priority: 'HIGH' },
+          { id: 'DR-28', skill: 'reliability', estimate_hours: 30, priority: 'HIGH' },
+          { id: 'SEC-118', skill: 'security', estimate_hours: 28, priority: 'HIGH' },
+          { id: 'OBS-09', skill: 'observability', estimate_hours: 20, priority: 'NORMAL' },
+          { id: 'REL-62', skill: 'release', estimate_hours: 18, priority: 'NORMAL' },
+          { id: 'DATA-44', skill: 'analytics', estimate_hours: 24, priority: 'NORMAL' },
+          { id: 'RUN-19', skill: 'enablement', estimate_hours: 16, priority: 'NORMAL' },
+          { id: 'UAT-33', skill: 'customer-success', estimate_hours: 18, priority: 'NORMAL' },
         ],
         team_members: [
-          { name: 'Ravi Iyer', skills: ['platform', 'observability', 'reliability'], load_pct: 78 },
-          { name: 'Mina Chen', skills: ['database', 'backend'], load_pct: 66 },
-          { name: 'Omar Haddad', skills: ['network', 'platform'], load_pct: 82 },
-          { name: 'Grace Lee', skills: ['reliability', 'observability'], load_pct: 58 },
+          { name: 'Ravi Iyer', role: 'Platform Lead', skills: ['platform', 'observability', 'reliability'], load_pct: 78, availability_pct: 65 },
+          { name: 'Mina Chen', role: 'Database Engineer', skills: ['database', 'backend'], load_pct: 66, availability_pct: 85 },
+          { name: 'Omar Haddad', role: 'Network Engineer', skills: ['network', 'platform'], load_pct: 82, availability_pct: 70 },
+          { name: 'Grace Lee', role: 'Reliability Engineer', skills: ['reliability', 'observability'], load_pct: 58, availability_pct: 90 },
+          { name: 'Sofia Kim', role: 'Security Architect', skills: ['security', 'network'], load_pct: 74, availability_pct: 75 },
+          { name: 'Jonas Weber', role: 'Data Platform Engineer', skills: ['analytics', 'database', 'platform'], load_pct: 67, availability_pct: 85 },
+          { name: 'Maya Brooks', role: 'Release Manager', skills: ['release', 'enablement'], load_pct: 60, availability_pct: 80 },
+          { name: 'Ethan Price', role: 'Implementation Lead', skills: ['customer-success', 'release'], load_pct: 58, availability_pct: 85 },
+          { name: 'Leah Stone', role: 'Backend Engineer', skills: ['backend', 'platform'], load_pct: 64, availability_pct: 90 },
+          { name: 'Akira Sato', role: 'SRE', skills: ['reliability', 'observability', 'platform'], load_pct: 72, availability_pct: 70 },
         ],
-        sprint_weeks: 3,
-        avg_task_hours: 19,
-        hourly_rate: 170,
+        sprint_weeks: 4,
+        remaining_engineering_hours: 1118,
+        available_engineering_hours: 860,
+        avg_task_hours: 28,
+        hourly_rate: 175,
       },
       'agent-delivery-forecast': {
         milestone_name: 'Summit Energy Atlas migration cutover',
-        committed_revenue_usd: 1350000,
+        committed_revenue_usd: 2400000,
         target_date: '2026-07-26',
-        current_date: '2026-06-07',
-        backlog_count: 45,
-        avg_velocity: 16,
+        current_date: '2026-06-09',
+        backlog_count: 88,
+        avg_velocity: 26,
         sprint_length_days: 14,
         blockers: [
           'Database replication dry run has not met RPO',
           'Customer DR test window is not confirmed',
+          'Network allowlist request is waiting on customer security review',
         ],
         capacity_changes: 'Platform team has two engineers on incident rotation',
       },
@@ -498,13 +570,186 @@ const projectScenarios: DemoScenario[] = [
         instruction:
           'Build an Atlas migration cutover plan with epics for network readiness, database replication, DR validation, observability, rollback criteria, owners, and executive decision points.',
         team_members: [
-          { name: 'Ravi Iyer', skills: ['platform', 'observability', 'reliability'], availability_pct: 75 },
-          { name: 'Mina Chen', skills: ['database', 'backend'], availability_pct: 85 },
-          { name: 'Omar Haddad', skills: ['network', 'platform'], availability_pct: 70 },
-          { name: 'Grace Lee', skills: ['reliability', 'observability'], availability_pct: 90 },
+          { name: 'Ravi Iyer', role: 'Platform Lead', skills: ['platform', 'observability', 'reliability'], availability_pct: 65 },
+          { name: 'Mina Chen', role: 'Database Engineer', skills: ['database', 'backend'], availability_pct: 85 },
+          { name: 'Omar Haddad', role: 'Network Engineer', skills: ['network', 'platform'], availability_pct: 70 },
+          { name: 'Grace Lee', role: 'Reliability Engineer', skills: ['reliability', 'observability'], availability_pct: 90 },
+          { name: 'Sofia Kim', role: 'Security Architect', skills: ['security', 'network'], availability_pct: 75 },
+          { name: 'Jonas Weber', role: 'Data Platform Engineer', skills: ['analytics', 'database', 'platform'], availability_pct: 85 },
+          { name: 'Maya Brooks', role: 'Release Manager', skills: ['release', 'enablement'], availability_pct: 80 },
+          { name: 'Ethan Price', role: 'Implementation Lead', skills: ['customer-success', 'release'], availability_pct: 85 },
+          { name: 'Leah Stone', role: 'Backend Engineer', skills: ['backend', 'platform'], availability_pct: 90 },
+          { name: 'Akira Sato', role: 'SRE', skills: ['reliability', 'observability', 'platform'], availability_pct: 70 },
+        ],
+        timeline_weeks: 8,
+        committed_revenue_usd: 2400000,
+      },
+    },
+  },
+  {
+    id: 'helios-consent-platform',
+    domain: 'project',
+    title: 'Helios $690K consent platform',
+    summary:
+      'Northlake Health needs consent capture, audit exports, and security review completed before a regulatory reporting deadline.',
+    payloads: {
+      'agent-sprint-risk': {
+        sprint_name: 'Helios Consent Platform Release',
+        team_size: 5,
+        days_remaining: 9,
+        total_tasks: 29,
+        completed_tasks: 11,
+        velocity_history: [15, 13, 11],
+        remaining_engineering_hours: 356,
+        remaining_story_points: 53,
+        available_engineering_hours: 280,
+        external_dependencies: [
+          'HIPAA audit export approval',
+          'Customer legal review for consent language',
+          'EHR sandbox access renewal',
+        ],
+        capacity_notes: 'Security engineer is shared with a compliance audit; QA has one tester out for two days.',
+        delay_cost_per_week_usd: 88000,
+      },
+      'agent-resource-alloc': {
+        tasks: [
+          { id: 'CONSENT-74', skill: 'frontend', estimate_hours: 26, priority: 'HIGH' },
+          { id: 'CONSENT-81', skill: 'backend', estimate_hours: 32, priority: 'HIGH' },
+          { id: 'AUDIT-22', skill: 'compliance', estimate_hours: 28, priority: 'HIGH' },
+          { id: 'EHR-47', skill: 'integration', estimate_hours: 30, priority: 'HIGH' },
+          { id: 'SEC-144', skill: 'security', estimate_hours: 22, priority: 'HIGH' },
+          { id: 'QA-231', skill: 'quality', estimate_hours: 26, priority: 'HIGH' },
+          { id: 'DOC-64', skill: 'enablement', estimate_hours: 12, priority: 'NORMAL' },
+          { id: 'REL-88', skill: 'release', estimate_hours: 14, priority: 'NORMAL' },
+          { id: 'OBS-71', skill: 'observability', estimate_hours: 16, priority: 'NORMAL' },
+        ],
+        team_members: [
+          { name: 'Nora Ali', role: 'Product Engineer', skills: ['frontend', 'backend'], load_pct: 70, availability_pct: 80 },
+          { name: 'Julian Reed', role: 'Integration Engineer', skills: ['integration', 'backend'], load_pct: 73, availability_pct: 85 },
+          { name: 'Mei Lin', role: 'Compliance Analyst', skills: ['compliance', 'enablement'], load_pct: 78, availability_pct: 75 },
+          { name: 'Hector Diaz', role: 'Security Engineer', skills: ['security', 'observability'], load_pct: 80, availability_pct: 60 },
+          { name: 'Tara Evans', role: 'QA Engineer', skills: ['quality', 'release'], load_pct: 66, availability_pct: 70 },
+        ],
+        sprint_weeks: 3,
+        remaining_engineering_hours: 356,
+        available_engineering_hours: 280,
+        avg_task_hours: 22,
+        hourly_rate: 158,
+      },
+      'agent-delivery-forecast': {
+        milestone_name: 'Northlake Health Helios consent go-live',
+        committed_revenue_usd: 690000,
+        target_date: '2026-07-12',
+        current_date: '2026-06-09',
+        backlog_count: 34,
+        avg_velocity: 13,
+        sprint_length_days: 14,
+        blockers: [
+          'EHR sandbox access expires before final regression',
+          'Consent language is still under customer legal review',
+          'Security test evidence is missing audit export coverage',
+        ],
+        capacity_changes: 'Security capacity is 60% until the compliance audit is closed.',
+      },
+      'agent-project-planning': {
+        instruction:
+          'Create a recovery plan for Helios consent platform with epics for consent UX, EHR integration, audit exports, security evidence, QA regression, owners, and executive decision points.',
+        team_members: [
+          { name: 'Nora Ali', role: 'Product Engineer', skills: ['frontend', 'backend'], availability_pct: 80 },
+          { name: 'Julian Reed', role: 'Integration Engineer', skills: ['integration', 'backend'], availability_pct: 85 },
+          { name: 'Mei Lin', role: 'Compliance Analyst', skills: ['compliance', 'enablement'], availability_pct: 75 },
+          { name: 'Hector Diaz', role: 'Security Engineer', skills: ['security', 'observability'], availability_pct: 60 },
+          { name: 'Tara Evans', role: 'QA Engineer', skills: ['quality', 'release'], availability_pct: 70 },
+        ],
+        timeline_weeks: 5,
+        committed_revenue_usd: 690000,
+      },
+    },
+  },
+  {
+    id: 'argus-warehouse-rollout',
+    domain: 'project',
+    title: 'Argus $1.75M warehouse rollout',
+    summary:
+      'OmniMart rollout depends on scanner integration, inventory reconciliation, and regional training before peak season.',
+    payloads: {
+      'agent-sprint-risk': {
+        sprint_name: 'Argus Warehouse Automation Wave 2',
+        team_size: 8,
+        days_remaining: 14,
+        total_tasks: 61,
+        completed_tasks: 25,
+        velocity_history: [27, 24, 20],
+        remaining_engineering_hours: 820,
+        remaining_story_points: 122,
+        available_engineering_hours: 650,
+        external_dependencies: [
+          'Scanner firmware certification',
+          'Warehouse operations UAT schedule',
+          'ERP inventory feed approval',
+        ],
+        capacity_notes: 'Two engineers are traveling for site pilots; training lead is split across three regions.',
+        delay_cost_per_week_usd: 240000,
+      },
+      'agent-resource-alloc': {
+        tasks: [
+          { id: 'SCAN-118', skill: 'integration', estimate_hours: 36, priority: 'HIGH' },
+          { id: 'SCAN-126', skill: 'device', estimate_hours: 30, priority: 'HIGH' },
+          { id: 'INV-204', skill: 'backend', estimate_hours: 40, priority: 'HIGH' },
+          { id: 'ERP-98', skill: 'integration', estimate_hours: 34, priority: 'HIGH' },
+          { id: 'OPS-77', skill: 'enablement', estimate_hours: 24, priority: 'HIGH' },
+          { id: 'QA-264', skill: 'quality', estimate_hours: 32, priority: 'HIGH' },
+          { id: 'REL-105', skill: 'release', estimate_hours: 18, priority: 'NORMAL' },
+          { id: 'OBS-93', skill: 'observability', estimate_hours: 22, priority: 'NORMAL' },
+          { id: 'DATA-72', skill: 'analytics', estimate_hours: 26, priority: 'NORMAL' },
+          { id: 'UAT-58', skill: 'customer-success', estimate_hours: 20, priority: 'NORMAL' },
+        ],
+        team_members: [
+          { name: 'Olivia Grant', role: 'Program Tech Lead', skills: ['backend', 'release'], load_pct: 76, availability_pct: 75 },
+          { name: 'Darius King', role: 'Device Integration Engineer', skills: ['device', 'integration'], load_pct: 82, availability_pct: 70 },
+          { name: 'Priya Mehta', role: 'ERP Engineer', skills: ['integration', 'backend'], load_pct: 70, availability_pct: 85 },
+          { name: 'Leo Novak', role: 'QA Automation Engineer', skills: ['quality', 'observability'], load_pct: 64, availability_pct: 90 },
+          { name: 'Hannah Cho', role: 'Data Engineer', skills: ['analytics', 'backend'], load_pct: 66, availability_pct: 85 },
+          { name: 'Marcus Hill', role: 'Release Manager', skills: ['release', 'enablement'], load_pct: 61, availability_pct: 80 },
+          { name: 'Amina Yusuf', role: 'Training Lead', skills: ['enablement', 'customer-success'], load_pct: 78, availability_pct: 65 },
+          { name: 'Vikram Sen', role: 'SRE', skills: ['observability', 'release'], load_pct: 58, availability_pct: 90 },
+        ],
+        sprint_weeks: 4,
+        remaining_engineering_hours: 820,
+        available_engineering_hours: 650,
+        avg_task_hours: 26,
+        hourly_rate: 168,
+      },
+      'agent-delivery-forecast': {
+        milestone_name: 'OmniMart Argus warehouse wave-2 rollout',
+        committed_revenue_usd: 1750000,
+        target_date: '2026-07-29',
+        current_date: '2026-06-09',
+        backlog_count: 71,
+        avg_velocity: 22,
+        sprint_length_days: 14,
+        blockers: [
+          'Scanner firmware certification is not complete',
+          'Warehouse UAT schedule conflicts with inventory freeze',
+          'ERP feed approval is waiting on regional operations',
+        ],
+        capacity_changes: 'Site pilot travel reduces engineering capacity for the next two weeks.',
+      },
+      'agent-project-planning': {
+        instruction:
+          'Build an Argus warehouse rollout plan with epics for scanner firmware, ERP inventory feed, reconciliation, regional UAT, training, observability, owners, and executive decision points.',
+        team_members: [
+          { name: 'Olivia Grant', role: 'Program Tech Lead', skills: ['backend', 'release'], availability_pct: 75 },
+          { name: 'Darius King', role: 'Device Integration Engineer', skills: ['device', 'integration'], availability_pct: 70 },
+          { name: 'Priya Mehta', role: 'ERP Engineer', skills: ['integration', 'backend'], availability_pct: 85 },
+          { name: 'Leo Novak', role: 'QA Automation Engineer', skills: ['quality', 'observability'], availability_pct: 90 },
+          { name: 'Hannah Cho', role: 'Data Engineer', skills: ['analytics', 'backend'], availability_pct: 85 },
+          { name: 'Marcus Hill', role: 'Release Manager', skills: ['release', 'enablement'], availability_pct: 80 },
+          { name: 'Amina Yusuf', role: 'Training Lead', skills: ['enablement', 'customer-success'], availability_pct: 65 },
+          { name: 'Vikram Sen', role: 'SRE', skills: ['observability', 'release'], availability_pct: 90 },
         ],
         timeline_weeks: 7,
-        committed_revenue_usd: 1350000,
+        committed_revenue_usd: 1750000,
       },
     },
   },
@@ -533,9 +778,11 @@ const revenueScenarios: DemoScenario[] = [
       'agent-renewal-risk': {
         account_name: 'Meridian Healthcare',
         account_arr: 840000,
+        renewal_arr_usd: 840000,
+        expansion_arr_usd: 180000,
         segment: 'Enterprise Healthcare',
         contract_end_date: '2026-09-30',
-        days_to_renewal: 117,
+        days_to_renewal: 113,
         login_frequency_30d: 42,
         feature_adoption_score: 7.8,
         support_tickets_90d: 3,
@@ -543,6 +790,9 @@ const revenueScenarios: DemoScenario[] = [
         last_csm_touchpoint: '2026-05-15',
         upsell_conversations: 1,
         historical_save_rate: 0.38,
+        account_owner: 'Sarah Chen',
+        csm_owner: 'Luis Ortega',
+        exec_sponsor: 'Priya Shah',
       },
       'agent-churn-signal': {
         account_name: 'Fortis Logistics',
@@ -556,12 +806,18 @@ const revenueScenarios: DemoScenario[] = [
         competitor_mentions: 2,
         contract_downloads: 1,
         early_intervention_value: 0.5,
+        account_owner: 'Sarah Chen',
+        csm_owner: 'Luis Ortega',
+        exec_sponsor: 'Priya Shah',
       },
       'agent-pipeline-forecast': {
         rep_name: 'Sarah Chen',
         quota_target: 1250000,
+        closed_to_date_usd: 390000,
+        commit_pipeline_usd: 640000,
+        best_case_pipeline_usd: 920000,
         quarter_close_date: '2026-06-30',
-        days_remaining: 23,
+        days_remaining: 21,
         historical_close_rate: 0.54,
         avg_sales_cycle_days: 45,
         pipeline_deals: [
@@ -606,9 +862,11 @@ const revenueScenarios: DemoScenario[] = [
       'agent-renewal-risk': {
         account_name: 'Apex Industrial',
         account_arr: 1250000,
+        renewal_arr_usd: 1250000,
+        expansion_arr_usd: 520000,
         segment: 'Enterprise Manufacturing',
         contract_end_date: '2026-10-15',
-        days_to_renewal: 131,
+        days_to_renewal: 128,
         login_frequency_30d: 21,
         feature_adoption_score: 5.1,
         support_tickets_90d: 9,
@@ -616,6 +874,9 @@ const revenueScenarios: DemoScenario[] = [
         last_csm_touchpoint: '2026-04-29',
         upsell_conversations: 0,
         historical_save_rate: 0.44,
+        account_owner: 'Maya Singh',
+        csm_owner: 'Anika Rao',
+        exec_sponsor: 'Daniel Kim',
       },
       'agent-churn-signal': {
         account_name: 'Beacon Health',
@@ -629,12 +890,18 @@ const revenueScenarios: DemoScenario[] = [
         competitor_mentions: 4,
         contract_downloads: 3,
         early_intervention_value: 0.48,
+        account_owner: 'Maya Singh',
+        csm_owner: 'Anika Rao',
+        exec_sponsor: 'Daniel Kim',
       },
       'agent-pipeline-forecast': {
         rep_name: 'Maya Singh',
         quota_target: 2200000,
+        closed_to_date_usd: 510000,
+        commit_pipeline_usd: 720000,
+        best_case_pipeline_usd: 1360000,
         quarter_close_date: '2026-06-30',
-        days_remaining: 23,
+        days_remaining: 21,
         historical_close_rate: 0.28,
         avg_sales_cycle_days: 58,
         pipeline_deals: [
@@ -664,6 +931,201 @@ const revenueScenarios: DemoScenario[] = [
             close_plan: 'store operations ROI review',
             risk: 'rollout budget shifted to next quarter',
             next_step: 'AE to narrow scope to top 40 stores',
+          },
+          {
+            account: 'Cascadia Foods',
+            arr: 260000,
+            crm_probability: 0.24,
+            stage: 'Technical validation',
+            close_plan: 'integration architecture review not scheduled',
+            risk: 'customer technical sponsor changed roles',
+            next_step: 'SE manager to secure new technical sponsor',
+          },
+        ],
+      },
+    },
+  },
+  {
+    id: 'public-sector-renewal',
+    domain: 'revenue',
+    title: 'Public sector renewal and expansion',
+    summary:
+      'A state agency renewal is stable, but expansion depends on procurement timing and executive sponsor coverage.',
+    payloads: {
+      'agent-renewal-risk': {
+        account_name: 'StateWorks Digital',
+        account_arr: 720000,
+        renewal_arr_usd: 720000,
+        expansion_arr_usd: 310000,
+        segment: 'Public Sector',
+        contract_end_date: '2026-09-20',
+        days_to_renewal: 103,
+        login_frequency_30d: 55,
+        feature_adoption_score: 8.1,
+        support_tickets_90d: 4,
+        nps_score: 64,
+        last_csm_touchpoint: '2026-05-22',
+        upsell_conversations: 2,
+        historical_save_rate: 0.52,
+        account_owner: 'Elliot Park',
+        csm_owner: 'Mina Joseph',
+        exec_sponsor: 'Priya Shah',
+      },
+      'agent-churn-signal': {
+        account_name: 'Metro Transit Authority',
+        account_arr: 480000,
+        contract_end_date: '2026-08-28',
+        days_to_renewal: 80,
+        login_trend: 'dispatcher usage down 33% over 45 days',
+        adoption_trend: 'mobile incident workflow stalled after pilot',
+        ticket_sentiment: 'mixed',
+        exec_engagement: 'operations sponsor changed roles and replacement is not onboarded',
+        competitor_mentions: 1,
+        contract_downloads: 2,
+        early_intervention_value: 0.42,
+        account_owner: 'Elliot Park',
+        csm_owner: 'Mina Joseph',
+        exec_sponsor: 'Priya Shah',
+      },
+      'agent-pipeline-forecast': {
+        rep_name: 'Elliot Park',
+        quota_target: 1600000,
+        closed_to_date_usd: 540000,
+        commit_pipeline_usd: 520000,
+        best_case_pipeline_usd: 980000,
+        quarter_close_date: '2026-06-30',
+        days_remaining: 21,
+        historical_close_rate: 0.46,
+        avg_sales_cycle_days: 61,
+        pipeline_deals: [
+          {
+            account: 'StateWorks Digital',
+            arr: 510000,
+            crm_probability: 0.74,
+            stage: 'Procurement',
+            close_plan: 'final purchase order routed to agency finance',
+            risk: 'procurement committee meets only twice before quarter close',
+            next_step: 'VP Public Sector to confirm committee agenda',
+          },
+          {
+            account: 'Metro Transit Authority',
+            arr: 380000,
+            crm_probability: 0.36,
+            stage: 'Pilot review',
+            close_plan: 'incident workflow pilot scorecard under review',
+            risk: 'new operations sponsor has not accepted success criteria',
+            next_step: 'CSM to run sponsor onboarding with pilot results',
+          },
+          {
+            account: 'Civic Water District',
+            arr: 260000,
+            crm_probability: 0.43,
+            stage: 'Security review',
+            close_plan: 'security packet returned with open encryption question',
+            risk: 'security review may slip to July',
+            next_step: 'Security lead to answer encryption exception by Thursday',
+          },
+          {
+            account: 'County Health Network',
+            arr: 220000,
+            crm_probability: 0.31,
+            stage: 'Business case',
+            close_plan: 'grant-funded business case awaiting CFO sign-off',
+            risk: 'grant approval is outside seller control',
+            next_step: 'RevOps to split grant-dependent scope from base purchase',
+          },
+        ],
+      },
+    },
+  },
+  {
+    id: 'growth-accounts-risk',
+    domain: 'revenue',
+    title: 'Growth accounts churn and commit risk',
+    summary:
+      'High-growth accounts carry strong expansion upside, but support friction and sponsor gaps threaten forecast commit.',
+    payloads: {
+      'agent-renewal-risk': {
+        account_name: 'NovaPay',
+        account_arr: 680000,
+        renewal_arr_usd: 680000,
+        expansion_arr_usd: 420000,
+        segment: 'Growth Fintech',
+        contract_end_date: '2026-09-10',
+        days_to_renewal: 93,
+        login_frequency_30d: 29,
+        feature_adoption_score: 6.2,
+        support_tickets_90d: 11,
+        nps_score: 18,
+        last_csm_touchpoint: '2026-05-02',
+        upsell_conversations: 1,
+        historical_save_rate: 0.36,
+        account_owner: 'Lena Ortiz',
+        csm_owner: 'Marco Bell',
+        exec_sponsor: 'Daniel Kim',
+      },
+      'agent-churn-signal': {
+        account_name: 'QuickCart',
+        account_arr: 520000,
+        contract_end_date: '2026-08-20',
+        days_to_renewal: 72,
+        login_trend: 'admin and API usage down 47% over 30 days',
+        adoption_trend: 'checkout automation disabled in two regions',
+        ticket_sentiment: 'negative',
+        exec_engagement: 'new VP Operations has not attended onboarding or QBR',
+        competitor_mentions: 5,
+        contract_downloads: 4,
+        early_intervention_value: 0.55,
+        account_owner: 'Lena Ortiz',
+        csm_owner: 'Marco Bell',
+        exec_sponsor: 'Daniel Kim',
+      },
+      'agent-pipeline-forecast': {
+        rep_name: 'Lena Ortiz',
+        quota_target: 1900000,
+        closed_to_date_usd: 460000,
+        commit_pipeline_usd: 610000,
+        best_case_pipeline_usd: 1420000,
+        quarter_close_date: '2026-06-30',
+        days_remaining: 21,
+        historical_close_rate: 0.34,
+        avg_sales_cycle_days: 49,
+        pipeline_deals: [
+          {
+            account: 'NovaPay',
+            arr: 620000,
+            crm_probability: 0.57,
+            stage: 'Legal review',
+            close_plan: 'data residency clause under legal redlines',
+            risk: 'buyer requested termination rights expansion',
+            next_step: 'CRO to approve fallback data residency language',
+          },
+          {
+            account: 'QuickCart',
+            arr: 430000,
+            crm_probability: 0.33,
+            stage: 'Commercial negotiation',
+            close_plan: 'discount request awaiting VP approval',
+            risk: 'support escalations are blocking expansion signature',
+            next_step: 'Support leader and CSM to close top two escalations',
+          },
+          {
+            account: 'BrightFleet',
+            arr: 370000,
+            crm_probability: 0.48,
+            stage: 'Security review',
+            close_plan: 'CISO review scheduled but pen-test evidence pending',
+            risk: 'security evidence may miss quarter close',
+            next_step: 'Security team to pre-brief CISO before review',
+          },
+          {
+            account: 'MarketLane',
+            arr: 310000,
+            crm_probability: 0.29,
+            stage: 'Business case',
+            close_plan: 'regional rollout ROI not approved by CFO',
+            risk: 'budget owner is prioritizing retention programs',
+            next_step: 'AE to narrow proposal to retention-critical workflows',
           },
         ],
       },
@@ -980,11 +1442,11 @@ function buildBusinessStorySummary(
 const views: Array<{ id: ViewId; label: string; group: string; icon: LucideIcon; index: string }> = [
   { id: 'story', label: 'Story View', group: 'Business', icon: DollarSign, index: '01' },
   { id: 'outcomes', label: 'Outcome Ledger', group: 'Business', icon: BarChart3, index: '02' },
-  { id: 'run', label: 'Run Console', group: 'Run', icon: Play, index: '03' },
-  { id: 'evidence', label: 'Evidence', group: 'Technical', icon: Activity, index: '04' },
-  { id: 'architecture', label: 'Architecture', group: 'Technical', icon: Layers3, index: '05' },
-  { id: 'settings', label: 'Settings', group: 'Control', icon: Settings, index: '06' },
-  { id: 'backlog', label: 'UI Tasks', group: 'Control', icon: FileText, index: '07' },
+  { id: 'data', label: 'Demo Data', group: 'Business', icon: Database, index: '03' },
+  { id: 'run', label: 'Run Console', group: 'Run', icon: Play, index: '04' },
+  { id: 'evidence', label: 'Evidence', group: 'Technical', icon: Activity, index: '05' },
+  { id: 'architecture', label: 'Architecture', group: 'Technical', icon: Layers3, index: '06' },
+  { id: 'settings', label: 'Settings', group: 'Control', icon: Settings, index: '07' },
 ]
 
 const viewCopy: Record<ViewId, { title: string; subtitle: string }> = {
@@ -995,6 +1457,10 @@ const viewCopy: Record<ViewId, { title: string; subtitle: string }> = {
   outcomes: {
     title: 'Outcome Ledger',
     subtitle: 'Financial value by business domain, source agent, confidence, and action owner.',
+  },
+  data: {
+    title: 'Demo Data',
+    subtitle: 'Business scenario assumptions and technical payloads used by this demo.',
   },
   run: {
     title: 'Run Console',
@@ -1011,10 +1477,6 @@ const viewCopy: Record<ViewId, { title: string; subtitle: string }> = {
   settings: {
     title: 'Settings',
     subtitle: 'Provider, model, token pricing, and run defaults for the next demo execution.',
-  },
-  backlog: {
-    title: 'UI Tasks',
-    subtitle: 'Implementation backlog for the next React UI iteration.',
   },
 }
 
@@ -1556,12 +2018,6 @@ export default function App() {
     )
   }
 
-  function showUiTask(task: string) {
-    setStatusMessage(
-      `UI task selected: ${task}. Next: implement the task, run frontend build, and verify the click path in the app.`,
-    )
-  }
-
   const runProgressLabel =
     activeProgress && hasRunningWork
       ? `Running ${activeProgress.active.label} ${activeProgress.complete + activeProgress.failed}/${activeProgress.total}`
@@ -1578,11 +2034,12 @@ export default function App() {
   function navBadge(targetView: ViewId) {
     if (targetView === 'story') return String(outcomes.length)
     if (targetView === 'outcomes') return sessionImpact > 0 ? money(sessionImpact) : '$0'
+    if (targetView === 'data') return String(visibleScenarios.length)
     if (targetView === 'run') return String(runs.length)
     if (targetView === 'evidence') return String(Math.max(recentRuns(runs).length, 8))
     if (targetView === 'architecture') return String(architectureLayers.length)
     if (targetView === 'settings') return String(providerOrder.length)
-    return '12'
+    return ''
   }
 
   return (
@@ -1731,10 +2188,14 @@ export default function App() {
             payloadPreviewGroups={payloadPreviewGroups}
             payloadPreviewOpen={payloadPreviewOpen}
             projectPlanningInput={projectPlanningInput}
+            projectScenarioIndex={projectScenarioIndex}
+            revenueScenarioIndex={revenueScenarioIndex}
             scope={scope}
             selectedAgent={selectedAgent}
             selectedAgentConfig={selectedAgentConfig}
             setProjectPlanningInput={setProjectPlanningInput}
+            setProjectScenarioIndex={setProjectScenarioIndex}
+            setRevenueScenarioIndex={setRevenueScenarioIndex}
             setSelectedAgent={setSelectedAgent}
             statusMessage={statusMessage}
             visibleScenarios={visibleScenarios}
@@ -1742,6 +2203,9 @@ export default function App() {
         )}
         {view === 'outcomes' && (
           <OutcomesView outcomes={outcomes} runs={runs} sessionImpact={sessionImpact} />
+        )}
+        {view === 'data' && (
+          <DemoDataView groups={payloadPreviewGroups} persona={persona} scenarios={visibleScenarios} />
         )}
         {view === 'evidence' && (
           <OperationsView runs={runs} statusMessage={statusMessage} onRefresh={() => void refresh()} />
@@ -1774,9 +2238,6 @@ export default function App() {
             setSelectedModel={setSettingsModel}
             setProvider={setSettingsProvider}
           />
-        )}
-        {view === 'backlog' && (
-          <BacklogView onTaskSelect={showUiTask} onViewChange={setView} />
         )}
       </main>
     </div>
@@ -2186,10 +2647,14 @@ function RunConsoleView({
   payloadPreviewGroups,
   payloadPreviewOpen,
   projectPlanningInput,
+  projectScenarioIndex,
+  revenueScenarioIndex,
   scope,
   selectedAgent,
   selectedAgentConfig,
   setProjectPlanningInput,
+  setProjectScenarioIndex,
+  setRevenueScenarioIndex,
   setSelectedAgent,
   statusMessage,
   visibleScenarios,
@@ -2209,10 +2674,14 @@ function RunConsoleView({
   payloadPreviewGroups: PayloadPreviewGroup[]
   payloadPreviewOpen: boolean
   projectPlanningInput: ProjectPlanningInput
+  projectScenarioIndex: number
+  revenueScenarioIndex: number
   scope: RunScope
   selectedAgent: AgentKey
   selectedAgentConfig: AgentConfig
   setProjectPlanningInput: (input: ProjectPlanningInput) => void
+  setProjectScenarioIndex: (index: number) => void
+  setRevenueScenarioIndex: (index: number) => void
   setSelectedAgent: (agent: AgentKey) => void
   statusMessage: string
   visibleScenarios: DemoScenario[]
@@ -2261,6 +2730,14 @@ function RunConsoleView({
         />
         <div className="run-console">
           <div className="run-console-main">
+            <ScenarioSelectorGrid
+              disabled={isSubmitting || runIsActive}
+              projectScenarioIndex={projectScenarioIndex}
+              revenueScenarioIndex={revenueScenarioIndex}
+              scope={scope}
+              setProjectScenarioIndex={setProjectScenarioIndex}
+              setRevenueScenarioIndex={setRevenueScenarioIndex}
+            />
             <div className="scenario-strip">
               {visibleScenarios.map((scenario) => (
                 <ScenarioCard scenario={scenario} key={scenario.id} />
@@ -2359,6 +2836,256 @@ function RunConsoleView({
   )
 }
 
+function ScenarioSelectorGrid({
+  disabled,
+  projectScenarioIndex,
+  revenueScenarioIndex,
+  scope,
+  setProjectScenarioIndex,
+  setRevenueScenarioIndex,
+}: {
+  disabled: boolean
+  projectScenarioIndex: number
+  revenueScenarioIndex: number
+  scope: RunScope
+  setProjectScenarioIndex: (index: number) => void
+  setRevenueScenarioIndex: (index: number) => void
+}) {
+  const showProject = scope === 'platform' || scope === 'project'
+  const showRevenue = scope === 'platform' || scope === 'revenue'
+
+  return (
+    <div className="scenario-selector-grid" aria-label="Scenario selection">
+      {showProject && (
+        <label className="scenario-select-card" htmlFor="project-scenario-select">
+          <span>Project Management scenario</span>
+          <select
+            id="project-scenario-select"
+            value={projectScenarioIndex % projectScenarios.length}
+            disabled={disabled}
+            onChange={(event) => setProjectScenarioIndex(Number(event.target.value))}
+          >
+            {projectScenarios.map((scenario, index) => (
+              <option value={index} key={scenario.id}>
+                {scenario.title}
+              </option>
+            ))}
+          </select>
+          <b>{projectScenarios.length} options</b>
+        </label>
+      )}
+      {showRevenue && (
+        <label className="scenario-select-card" htmlFor="revenue-scenario-select">
+          <span>Revenue Ops scenario</span>
+          <select
+            id="revenue-scenario-select"
+            value={revenueScenarioIndex % revenueScenarios.length}
+            disabled={disabled}
+            onChange={(event) => setRevenueScenarioIndex(Number(event.target.value))}
+          >
+            {revenueScenarios.map((scenario, index) => (
+              <option value={index} key={scenario.id}>
+                {scenario.title}
+              </option>
+            ))}
+          </select>
+          <b>{revenueScenarios.length} options</b>
+        </label>
+      )}
+    </div>
+  )
+}
+
+function payloadNumber(payload: Record<string, unknown> | undefined, key: string) {
+  const value = payload?.[key]
+  return typeof value === 'number' && Number.isFinite(value) ? value : 0
+}
+
+function payloadArrayLength(payload: Record<string, unknown> | undefined, key: string) {
+  const value = payload?.[key]
+  return Array.isArray(value) ? value.length : 0
+}
+
+function weightedPipeline(payload: Record<string, unknown> | undefined) {
+  const deals = payload?.pipeline_deals
+  if (!Array.isArray(deals)) return 0
+  return deals.reduce((sum, deal) => {
+    if (!deal || typeof deal !== 'object') return sum
+    const row = deal as Record<string, unknown>
+    return sum + payloadNumber(row, 'arr') * payloadNumber(row, 'crm_probability')
+  }, 0)
+}
+
+function scenarioDataFacts(scenario: DemoScenario) {
+  if (scenario.domain === 'project') {
+    const sprint = scenario.payloads['agent-sprint-risk']
+    const allocation = scenario.payloads['agent-resource-alloc']
+    const forecast = scenario.payloads['agent-delivery-forecast']
+    const remainingTasks = Math.max(
+      0,
+      payloadNumber(sprint, 'total_tasks') - payloadNumber(sprint, 'completed_tasks'),
+    )
+    return {
+      eyebrow: 'Project Management',
+      business: [
+        ['Committed revenue', money(payloadNumber(forecast, 'committed_revenue_usd'))],
+        ['Weekly delay exposure', money(payloadNumber(sprint, 'delay_cost_per_week_usd'))],
+        ['Remaining tasks', String(remainingTasks)],
+        ['Remaining engineering hours', String(payloadNumber(sprint, 'remaining_engineering_hours'))],
+      ],
+      technical: [
+        ['Team records', `${payloadArrayLength(allocation, 'team_members')} named people`],
+        ['Critical task records', `${payloadArrayLength(allocation, 'tasks')} allocatable tasks`],
+        ['Capacity model', `${payloadNumber(sprint, 'available_engineering_hours')} available hours`],
+        ['Velocity history', `${payloadArrayLength(sprint, 'velocity_history')} sprints`],
+      ],
+    }
+  }
+
+  const renewal = scenario.payloads['agent-renewal-risk']
+  const churn = scenario.payloads['agent-churn-signal']
+  const pipeline = scenario.payloads['agent-pipeline-forecast']
+  const weighted = weightedPipeline(pipeline)
+  const quota = payloadNumber(pipeline, 'quota_target')
+  const closed = payloadNumber(pipeline, 'closed_to_date_usd')
+  return {
+    eyebrow: 'Revenue Management',
+    business: [
+      ['Quota target', money(quota)],
+      ['Closed to date', money(closed)],
+      ['Weighted pipeline', money(weighted)],
+      ['Open quota gap', money(Math.max(0, quota - closed - weighted))],
+    ],
+    technical: [
+      ['Renewal account ARR', money(payloadNumber(renewal, 'account_arr'))],
+      ['Churn exposure ARR', money(payloadNumber(churn, 'account_arr'))],
+      ['Pipeline deal rows', `${payloadArrayLength(pipeline, 'pipeline_deals')} deals`],
+      ['Forecast rollups', 'closed, commit, best case, weighted'],
+    ],
+  }
+}
+
+function DemoDataView({
+  groups,
+  persona,
+  scenarios,
+}: {
+  groups: PayloadPreviewGroup[]
+  persona: Persona
+  scenarios: DemoScenario[]
+}) {
+  const payloadCount = groups.reduce((sum, group) => sum + group.items.length, 0)
+  const projectRevenue = scenarios
+    .filter((scenario) => scenario.domain === 'project')
+    .reduce(
+      (sum, scenario) =>
+        sum + payloadNumber(scenario.payloads['agent-delivery-forecast'], 'committed_revenue_usd'),
+      0,
+    )
+  const revenueQuota = scenarios
+    .filter((scenario) => scenario.domain === 'revenue')
+    .reduce(
+      (sum, scenario) =>
+        sum + payloadNumber(scenario.payloads['agent-pipeline-forecast'], 'quota_target'),
+      0,
+    )
+
+  return (
+    <div className="page-stack">
+      <section className="kpi-grid" aria-label="Demo data summary">
+        <Kpi label="Scenario scope" value={String(scenarios.length)} detail="active demo scenarios" />
+        <Kpi label="Agent payloads" value={String(payloadCount)} detail="exact run inputs" />
+        <Kpi label="Project value" value={money(projectRevenue)} detail="delivery-linked revenue" />
+        <Kpi label="Revenue target" value={money(revenueQuota)} detail="quota in active revenue data" />
+        <Kpi label="Lens" value={persona === 'business' ? 'Business' : 'Technical'} detail="same data, different framing" />
+      </section>
+
+      <section className="section">
+        <SectionHeader
+          icon={<Database size={18} />}
+          label="business data"
+          title="Scenario Assumptions"
+          subtitle="The demo uses scaled project and revenue scenarios so team size, work volume, exposure, quota, and account risk move together."
+        />
+        <div className="data-scenario-grid">
+          {scenarios.map((scenario) => {
+            const facts = scenarioDataFacts(scenario)
+            return (
+              <article className="data-scenario-card" key={scenario.id}>
+                <span>{facts.eyebrow}</span>
+                <strong>{scenario.title}</strong>
+                <p>{scenario.summary}</p>
+                <div className="data-fact-grid">
+                  {facts.business.map(([label, value]) => (
+                    <div key={label}>
+                      <span>{label}</span>
+                      <b>{value}</b>
+                    </div>
+                  ))}
+                </div>
+              </article>
+            )
+          })}
+        </div>
+      </section>
+
+      <section className="section">
+        <SectionHeader
+          icon={<Cpu size={18} />}
+          label="technical data"
+          title="Payload Contract"
+          subtitle="These are the concrete app payloads sent to FastAPI for each selected business agent."
+        />
+        <div className="data-technical-grid">
+          {scenarios.map((scenario) => {
+            const facts = scenarioDataFacts(scenario)
+            return (
+              <article className="data-technical-card" key={scenario.id}>
+                <span>{scenario.domain === 'project' ? 'Project payload shape' : 'Revenue payload shape'}</span>
+                <strong>{scenario.title}</strong>
+                {facts.technical.map(([label, value]) => (
+                  <div key={label}>
+                    <span>{label}</span>
+                    <b>{value}</b>
+                  </div>
+                ))}
+              </article>
+            )
+          })}
+        </div>
+        <div className="payload-domain-list data-payload-list">
+          {groups.map((group) => (
+            <details className="payload-domain-group" key={group.domain}>
+              <summary>
+                <div>
+                  <span>{group.label}</span>
+                  <strong>{group.scenarioTitle}</strong>
+                  <em>{group.items.length} payload{group.items.length === 1 ? '' : 's'} available for inspection</em>
+                </div>
+                <b>{group.items.length} agents</b>
+              </summary>
+              <div className="payload-agent-list">
+                {group.items.map(({ agent, payload }) => (
+                  <details className="payload-agent-card" key={agent.id}>
+                    <summary>
+                      <div>
+                        <strong>{agent.name}</strong>
+                        <span>{agent.description}</span>
+                      </div>
+                      <b>{Object.keys(payload).length} fields</b>
+                    </summary>
+                    <pre>{JSON.stringify(payload, null, 2)}</pre>
+                  </details>
+                ))}
+              </div>
+            </details>
+          ))}
+        </div>
+      </section>
+    </div>
+  )
+}
+
 function PayloadPreviewPanel({
   groups,
   onClose,
@@ -2410,87 +3137,6 @@ function PayloadPreviewPanel({
         ))}
       </div>
     </section>
-  )
-}
-
-const backlogGroups = [
-  {
-    label: 'P0 - Flow clarity',
-    tasks: [
-      ['Make Run Console the execution hub', 'Top run actions should route to the dedicated run surface with progress, scope, scenario, and agent status.'],
-      ['Separate persona from scope', 'Persona changes the presentation. Scope changes which agents execute.'],
-      ['Add guided demo state machine', 'Walk through run, progress, outcome, evidence, architecture, and next action.'],
-      ['Persist visible run progress', 'Keep progress visible while background tasks execute.'],
-    ],
-  },
-  {
-    label: 'P1 - Business value',
-    tasks: [
-      ['Make Outcome Ledger the anchor', 'Use value, confidence, owner, domain, and source run as first-class columns.'],
-      ['Add owner and next action fields', 'Business users need who owns the recovery plan or save motion.'],
-      ['Show before and after story', 'Translate output into risk before, action taken, risk after, and saved value.'],
-      ['Add executive export state', 'Create a CFO-ready summary action for handoff.'],
-    ],
-  },
-  {
-    label: 'P2 - Technical trust',
-    tasks: [
-      ['Add trace detail drawer', 'Click a run row to show prompt, response, parsed output, model, run cost, quality, and retry lineage.'],
-      ['Connect architecture to live runs', 'Highlight active architecture layers as runs complete.'],
-      ['Improve runtime settings', 'Expose provider, model, price, concurrency, quality judge, and scenario controls.'],
-      ['Run responsive layout pass', 'Verify readability on 1366px desktop and tablet widths.'],
-    ],
-  },
-] as const
-
-function BacklogView({
-  onTaskSelect,
-  onViewChange,
-}: {
-  onTaskSelect: (task: string) => void
-  onViewChange: (view: ViewId) => void
-}) {
-  return (
-    <div className="page-stack">
-      <section className="section">
-        <SectionHeader
-          icon={<FileText size={18} />}
-          label="implementation plan"
-          title="UI and Flow Improvement Tasks"
-          subtitle="Tasks to move the product UI toward the clearer enterprise flow shown in the prototype."
-          action={
-            <div className="button-row">
-              <button className="btn" type="button" onClick={() => onViewChange('run')}>
-                Open run console
-              </button>
-              <button className="btn primary" type="button" onClick={() => onTaskSelect('Start with P0 flow clarity')}>
-                Mark P0 ready
-              </button>
-            </div>
-          }
-        />
-        <div className="task-group-grid">
-          {backlogGroups.map((group) => (
-            <article className="task-group" key={group.label}>
-              <span>{group.label}</span>
-              <div>
-                {group.tasks.map(([title, body]) => (
-                  <button
-                    className="task-item"
-                    type="button"
-                    key={title}
-                    onClick={() => onTaskSelect(title)}
-                  >
-                    <strong>{title}</strong>
-                    <p>{body}</p>
-                  </button>
-                ))}
-              </div>
-            </article>
-          ))}
-        </div>
-      </section>
-    </div>
   )
 }
 

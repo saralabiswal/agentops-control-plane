@@ -413,8 +413,7 @@ main {
 .architecture-card p,
 .architecture-metric p,
 .architecture-detail-panel p,
-.architecture-run-step p,
-.task-item p {
+.architecture-run-step p {
   margin: 0;
   color: var(--color-text-muted);
   font-size: 13px;
@@ -440,9 +439,7 @@ main {
 .architecture-live-run,
 .domain-story-card,
 .run-focus-summary,
-.setting-panel,
-.task-group,
-.task-item {
+.setting-panel {
   border: 1px solid var(--color-border);
   border-radius: var(--radius);
   background: var(--color-surface-muted);
@@ -495,8 +492,7 @@ main {
 .architecture-flow-node strong,
 .architecture-run-step strong,
 .info-card strong,
-.domain-story-card strong,
-.task-item strong {
+.domain-story-card strong {
   font-size: 14px;
   line-height: 1.25;
 }
@@ -724,51 +720,6 @@ main {
   grid-template-columns: repeat(4, minmax(0, 1fr));
 }
 
-.task-group-grid {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
-  padding: 16px;
-}
-
-.task-group {
-  padding: 14px;
-  display: grid;
-  align-content: start;
-  gap: 10px;
-}
-
-.task-group > span {
-  color: var(--color-text-muted);
-  font-size: 11px;
-  font-weight: 800;
-  text-transform: uppercase;
-  letter-spacing: .04em;
-}
-
-.task-group > div {
-  display: grid;
-  gap: 8px;
-}
-
-.task-item {
-  width: 100%;
-  min-height: 104px;
-  padding: 12px;
-  color: var(--color-text);
-  display: grid;
-  align-content: start;
-  gap: 7px;
-  text-align: left;
-}
-
-.task-item:hover,
-.task-item:focus-visible {
-  border-color: var(--color-brand-border);
-  background: var(--color-brand-soft);
-  box-shadow: inset 3px 0 0 var(--color-brand);
-}
-
 .info-card {
   min-height: 128px;
   padding: 14px;
@@ -845,6 +796,85 @@ main {
 
 .payload-preview-section {
   border-color: var(--color-brand-border);
+}
+
+.data-scenario-grid,
+.data-technical-grid {
+  padding: 16px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 12px;
+}
+
+.data-scenario-card,
+.data-technical-card {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface-muted);
+  padding: 14px;
+  display: grid;
+  align-content: start;
+  gap: 10px;
+}
+
+.data-scenario-card > span,
+.data-technical-card > span,
+.data-fact-grid span,
+.data-technical-card div span {
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.data-scenario-card > strong,
+.data-technical-card > strong {
+  font-size: 15px;
+  line-height: 1.25;
+}
+
+.data-scenario-card p {
+  margin: 0;
+  color: var(--color-text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.data-fact-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.data-fact-grid div,
+.data-technical-card div {
+  min-width: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 7px;
+  background: var(--color-surface);
+  padding: 9px;
+  display: grid;
+  gap: 3px;
+}
+
+.data-fact-grid b,
+.data-technical-card div b {
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.data-technical-card {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.data-technical-card > span,
+.data-technical-card > strong {
+  grid-column: 1 / -1;
+}
+
+.data-payload-list {
+  padding-top: 0;
 }
 
 .payload-domain-list {
@@ -963,6 +993,52 @@ main {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
   gap: 10px;
+}
+
+.scenario-selector-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 10px;
+}
+
+.scenario-select-card {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: var(--color-surface-muted);
+  padding: 12px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px 10px;
+  align-items: center;
+}
+
+.scenario-select-card span {
+  color: var(--color-text-muted);
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.scenario-select-card select {
+  grid-column: 1 / -1;
+  width: 100%;
+  min-height: 36px;
+  border: 1px solid var(--color-border);
+  border-radius: 7px;
+  background: var(--color-surface);
+  color: var(--color-text);
+  padding: 0 9px;
+}
+
+.scenario-select-card b {
+  border-radius: 999px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-text-muted);
+  padding: 4px 8px;
+  font-size: 11px;
+  white-space: nowrap;
 }
 
 .scenario-card,
@@ -2104,8 +2180,7 @@ th {
   .architecture-grid,
   .architecture-run-path,
   .settings-grid,
-  .outcome-ledger-kpis,
-  .task-group-grid {
+  .outcome-ledger-kpis {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
   .architecture-workspace,
@@ -2146,7 +2221,6 @@ th {
   .outcome-detail-panel dl,
   .outcome-row,
   .settings-grid,
-  .task-group-grid,
   .run-focus-metrics,
   .workflow-run-parent,
   .workflow-node-row,

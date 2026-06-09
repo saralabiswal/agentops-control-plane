@@ -50,26 +50,20 @@ class BusinessOutcomeCalculator:
         input_payload: dict[str, Any],
         output_payload: dict[str, Any],
     ) -> OutcomeResult | None:
-        confidence = self._rate(
-            output_payload.get(
-                "confidence_score",
-                output_payload.get(
-                    "delivery_confidence_score",
-                    output_payload.get("delivery_confidence", 0.7),
-                ),
-            ),
-            default=0.7,
-        )
+        confidence = self._confidence_for(agent_name, input_payload, output_payload)
         if agent_name == "SprintRiskAgent":
             value = self._rate(output_payload.get("risk_score", 0)) * self._number(
                 input_payload.get("delay_cost_per_week_usd", 50000)
             )
             return self._usd("risk_mitigation", "delivery_risk_mitigated_usd", value, confidence)
         if agent_name == "ResourceAllocationAgent":
-            tasks = len(input_payload.get("tasks", []))
+            scoped_hours = self._number(input_payload.get("remaining_engineering_hours", 0))
+            if scoped_hours <= 0:
+                scoped_hours = len(input_payload.get("tasks", [])) * self._number(
+                    input_payload.get("avg_task_hours", 8)
+                )
             value = (
-                tasks
-                * self._number(input_payload.get("avg_task_hours", 8))
+                scoped_hours
                 * self._rate(output_payload.get("efficiency_gain_pct", 0))
                 * self._number(input_payload.get("hourly_rate", 125))
             )
@@ -149,6 +143,181 @@ class BusinessOutcomeCalculator:
         if rate > 1:
             rate = rate / 100
         return min(max(rate, 0.0), 1.0)
+
+    def _confidence_for(
+        self,
+        agent_name: str,
+        input_payload: dict[str, Any],
+        output_payload: dict[str, Any],
+    ) -> float:
+        """Resolve outcome confidence from model output, then deterministic evidence quality."""
+        explicit = self._explicit_confidence(output_payload)
+        if explicit is not None:
+            return explicit
+        if agent_name == "ResourceAllocationAgent":
+            return self._resource_allocation_confidence(input_payload, output_payload)
+        if agent_name == "RenewalRiskAgent":
+            return self._renewal_confidence(input_payload, output_payload)
+        if agent_name == "ChurnSignalAgent":
+            return self._churn_confidence(input_payload, output_payload)
+        if agent_name == "PipelineForecastAgent":
+            return self._pipeline_confidence(input_payload, output_payload)
+        return 0.7
+
+    def _explicit_confidence(self, output_payload: dict[str, Any]) -> float | None:
+        for key in ("confidence_score", "delivery_confidence_score", "delivery_confidence"):
+            value = output_payload.get(key)
+            if value is None:
+                continue
+            try:
+                return self._rate(value)
+            except (TypeError, ValueError):
+                continue
+        return None
+
+    def _resource_allocation_confidence(
+        self,
+        input_payload: dict[str, Any],
+        output_payload: dict[str, Any],
+    ) -> float:
+        tasks = input_payload.get("tasks", [])
+        assignments = output_payload.get("assignments", [])
+        task_count = len(tasks) if isinstance(tasks, list) else 0
+        assignment_count = len(assignments) if isinstance(assignments, list) else 0
+        coverage = assignment_count / task_count if task_count else 0.5
+        remaining_hours = self._safe_number(input_payload.get("remaining_engineering_hours"))
+        available_hours = self._safe_number(input_payload.get("available_engineering_hours"))
+        if remaining_hours > 0 and available_hours > 0:
+            capacity_fit = min(available_hours / remaining_hours, 1.0)
+        else:
+            capacity_fit = 0.7
+        efficiency_present = (
+            1.0 if self._safe_number(output_payload.get("efficiency_gain_pct")) > 0 else 0.4
+        )
+        return round(
+            self._weighted_average(
+                (coverage, 0.45),
+                (capacity_fit, 0.35),
+                (efficiency_present, 0.2),
+            ),
+            3,
+        )
+
+    def _renewal_confidence(
+        self,
+        input_payload: dict[str, Any],
+        output_payload: dict[str, Any],
+    ) -> float:
+        signal_keys = (
+            "account_arr",
+            "days_to_renewal",
+            "login_frequency_30d",
+            "feature_adoption_score",
+            "support_tickets_90d",
+            "nps_score",
+            "last_csm_touchpoint",
+            "historical_save_rate",
+        )
+        input_coverage = self._field_coverage(input_payload, signal_keys)
+        risk_factors = output_payload.get("risk_factors", [])
+        actions = output_payload.get("recommended_actions", [])
+        evidence_depth = min(len(risk_factors) / 3, 1.0) if isinstance(risk_factors, list) else 0.0
+        action_depth = min(len(actions) / 2, 1.0) if isinstance(actions, list) else 0.0
+        return round(
+            self._weighted_average(
+                (input_coverage, 0.55),
+                (evidence_depth, 0.25),
+                (action_depth, 0.2),
+            ),
+            3,
+        )
+
+    def _churn_confidence(
+        self,
+        input_payload: dict[str, Any],
+        output_payload: dict[str, Any],
+    ) -> float:
+        signal_keys = (
+            "account_arr",
+            "days_to_renewal",
+            "login_trend",
+            "adoption_trend",
+            "ticket_sentiment",
+            "exec_engagement",
+            "competitor_mentions",
+            "contract_downloads",
+        )
+        input_coverage = self._field_coverage(input_payload, signal_keys)
+        top_signals = output_payload.get("top_signals", [])
+        signal_depth = min(len(top_signals) / 3, 1.0) if isinstance(top_signals, list) else 0.0
+        play_present = 1.0 if output_payload.get("recommended_play") else 0.4
+        return round(
+            self._weighted_average(
+                (input_coverage, 0.5),
+                (signal_depth, 0.3),
+                (play_present, 0.2),
+            ),
+            3,
+        )
+
+    def _pipeline_confidence(
+        self,
+        input_payload: dict[str, Any],
+        output_payload: dict[str, Any],
+    ) -> float:
+        pipeline_deals = input_payload.get("pipeline_deals", [])
+        deal_count = len(pipeline_deals) if isinstance(pipeline_deals, list) else 0
+        deal_depth = min(deal_count / 4, 1.0)
+        forecast_fields = self._field_coverage(
+            output_payload,
+            (
+                "attainment_forecast",
+                "weighted_pipeline_usd",
+                "realistic_pipeline_usd",
+                "quota_gap_usd",
+                "recoverable_gap_usd",
+            ),
+        )
+        focus_accounts = output_payload.get("focus_accounts", [])
+        focus_depth = min(len(focus_accounts) / 2, 1.0) if isinstance(focus_accounts, list) else 0.0
+        time_pressure = self._pipeline_time_pressure(input_payload)
+        return round(
+            self._weighted_average(
+                (deal_depth, 0.25),
+                (forecast_fields, 0.35),
+                (focus_depth, 0.25),
+                (time_pressure, 0.15),
+            ),
+            3,
+        )
+
+    def _pipeline_time_pressure(self, input_payload: dict[str, Any]) -> float:
+        days_remaining = self._safe_number(input_payload.get("days_remaining"))
+        avg_sales_cycle = self._safe_number(input_payload.get("avg_sales_cycle_days"))
+        if days_remaining <= 0 or avg_sales_cycle <= 0:
+            return 0.6
+        return min(max(days_remaining / avg_sales_cycle, 0.25), 1.0)
+
+    def _field_coverage(self, payload: dict[str, Any], keys: tuple[str, ...]) -> float:
+        present = 0
+        for key in keys:
+            value = payload.get(key)
+            if value not in (None, "", [], {}):
+                present += 1
+        return present / len(keys)
+
+    def _safe_number(self, value: Any, default: float = 0.0) -> float:
+        try:
+            return self._number(value, default)
+        except (TypeError, ValueError):
+            return default
+
+    def _weighted_average(self, *weighted_values: tuple[float, float]) -> float:
+        total_weight = sum(weight for _, weight in weighted_values)
+        if total_weight <= 0:
+            return 0.0
+        value = sum(min(max(score, 0.0), 1.0) * weight for score, weight in weighted_values)
+        return min(max(value / total_weight, 0.0), 1.0)
 
     def _usd(
         self, outcome_type: str, metric_name: str, value: float, confidence: float

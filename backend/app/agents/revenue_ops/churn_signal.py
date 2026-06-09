@@ -25,9 +25,13 @@ Support ticket sentiment: {payload.get('ticket_sentiment', 'neutral')}
 Executive sponsor engagement: {payload.get('exec_engagement', 'unknown')}
 Competitor mentions in tickets: {payload.get('competitor_mentions', 0)}
 Contract download events: {payload.get('contract_downloads', 0)}
+Account owner: {payload.get('account_owner', 'Unknown')}
+CSM owner: {payload.get('csm_owner', 'Unknown')}
+Executive sponsor: {payload.get('exec_sponsor', 'Unknown')}
 
 Return JSON with churn_probability, signal_strength, days_to_act,
-early_intervention_value_usd, top_signals, recommended_play, urgency, and summary.
+early_intervention_value_usd, top_signals, recommended_play, urgency,
+confidence_score, and summary.
 {JSON_ONLY}"""
 
     def parse_output(self, raw_response: str) -> dict[str, Any]:
