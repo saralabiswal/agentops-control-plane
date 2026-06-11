@@ -1,12 +1,14 @@
 import asyncio
+import logging
 from typing import Any
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.agents.registry import AgentRegistry
 from app.core.database import get_db
+from app.core.enums import TaskStatus
 from app.llm.client import LLMClient
 from app.models.agent_definition import AgentDefinition
 from app.models.agent_run import AgentRun
@@ -24,6 +26,7 @@ from app.schemas.task import (
 __author__ = "Sarala Biswal"
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 async def _pricing_id(db: AsyncSession, agent: AgentDefinition, model_name: str) -> str:
@@ -50,23 +53,47 @@ async def execute_task(task_id: str, registry: AgentRegistry, model_pricing_id: 
     """Load the queued task in a background worker and hand it to the registered agent."""
     from app.core.database import AsyncSessionLocal
 
-    async with AsyncSessionLocal() as db:
-        task = await db.get(Task, task_id)
-        if task is None:
-            return
-        await registry.get(task.agent_id).run(task, model_pricing_id)
+    try:
+        async with AsyncSessionLocal() as db:
+            task = await db.get(Task, task_id)
+            if task is None:
+                return
+            await registry.get(task.agent_id).run(task, model_pricing_id)
+    except Exception:
+        logger.exception("Background task execution failed for task %s", task_id)
+        await _mark_task_failed_if_unfinished(task_id)
 
 
 async def execute_tasks_concurrently(
     jobs: list[tuple[str, AgentRegistry, str]],
 ) -> None:
     """Run a submitted scope as independent task executions under one API request."""
-    await asyncio.gather(
+    results = await asyncio.gather(
         *(
             execute_task(task_id, registry, model_pricing_id)
             for task_id, registry, model_pricing_id in jobs
-        )
+        ),
+        return_exceptions=True,
     )
+    for result in results:
+        if isinstance(result, Exception):
+            logger.error(
+                "Batch worker escaped its task guard",
+                exc_info=(type(result), result, result.__traceback__),
+            )
+
+
+async def _mark_task_failed_if_unfinished(task_id: str) -> None:
+    """Fail a task only when an exception happened before AgentOps could finish it."""
+    from app.core.database import AsyncSessionLocal
+
+    async with AsyncSessionLocal() as db:
+        await db.execute(
+            update(Task)
+            .where(Task.id == task_id, Task.status.not_in([TaskStatus.COMPLETE, TaskStatus.FAILED]))
+            .values(status=TaskStatus.FAILED)
+        )
+        await db.commit()
 
 
 @router.post("/tasks", response_model=TaskSchema)
@@ -184,12 +211,16 @@ async def retry_task(
     async def run_retry() -> None:
         from app.core.database import AsyncSessionLocal
 
-        async with AsyncSessionLocal() as retry_db:
-            retry_task_obj = await retry_db.get(Task, retry.id)
-            if retry_task_obj is not None:
-                await registry.get(retry_task_obj.agent_id).run(
-                    retry_task_obj, pricing_id, retry_of=prior_run.id if prior_run else None
-                )
+        try:
+            async with AsyncSessionLocal() as retry_db:
+                retry_task_obj = await retry_db.get(Task, retry.id)
+                if retry_task_obj is not None:
+                    await registry.get(retry_task_obj.agent_id).run(
+                        retry_task_obj, pricing_id, retry_of=prior_run.id if prior_run else None
+                    )
+        except Exception:
+            logger.exception("Background retry execution failed for task %s", retry.id)
+            await _mark_task_failed_if_unfinished(retry.id)
 
     background_tasks.add_task(run_retry)
     return retry

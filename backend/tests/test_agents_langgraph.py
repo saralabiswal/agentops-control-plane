@@ -193,6 +193,50 @@ def workflow_responses_with_repaired_capacity_json():
     return responses
 
 
+def workflow_responses_with_nested_capacity_overloaded_members():
+    responses = workflow_responses()
+    responses[1] = llm_response(
+        json.dumps(
+            {
+                "team_capacity": {
+                    "total_load": 80,
+                    "available_members": [
+                        {"name": "Iris Chen", "load_pct": 64},
+                        {"name": "Samir Gupta", "load_pct": 64},
+                        {"name": "Theo Martin", "load_pct": 72},
+                    ],
+                    "overloaded_members": [{"name": "Marta Silva", "load_pct": 50}],
+                },
+                "skill_gaps": [
+                    {
+                        "name": "Iris Chen",
+                        "missing_skills": ["quality"],
+                    }
+                ],
+                "capacity_risk_level": 2,
+                "capacity_notes": [
+                    "Members with availability percentage above 80",
+                    "High risk of burnout",
+                ],
+            }
+        )
+    )
+    return responses
+
+
+def workflow_responses_with_truncated_synthesize_string():
+    responses = workflow_responses()
+    responses[4] = llm_response(
+        '{"project_title":"Northstar Portal Phase 1 Recovery Plan",'
+        '"executive_summary":"Recovery plan protects the customer portal launch.",'
+        '"delivery_confidence":70,"revenue_at_risk_usd":0,'
+        '"epics_with_assignments":[{"id":"E-01","name":"SSO Epic"}],'
+        '"top_risks":[{"id":"R-1","severity":"High"}],'
+        '"key_recommendations":[{"id":"1","name":"Develop a release readiness checklist to'
+    )
+    return responses
+
+
 @pytest.mark.asyncio
 async def test_project_planning_workflow_creates_parent_and_child_runs() -> None:
     llm = FakeLLM(workflow_responses())
@@ -444,6 +488,112 @@ async def test_project_planning_workflow_repairs_capacity_keyless_skill_arrays()
         "identity",
         "release",
     ]
+
+
+@pytest.mark.asyncio
+async def test_project_planning_workflow_lifts_nested_capacity_overloaded_members() -> None:
+    llm = FakeLLM(workflow_responses_with_nested_capacity_overloaded_members())
+    sse = SSEEmitter()
+    manager = AgentOpsManager(sse, QualityQueue(sse), CostCalculator())
+    planning_agent = ProjectPlanningAgent(llm, manager)
+
+    async with AsyncSessionLocal() as db:
+        session = Session(name="Workflow Nested Capacity Members Test")
+        agent = await db.get(AgentDefinition, "agent-project-planning")
+        pricing = await db.get(ModelPricing, "price-ollama-llama32-3b")
+        assert agent is not None
+        assert pricing is not None
+        task = Task(
+            session=session,
+            agent_id=agent.id,
+            domain=agent.domain,
+            task_type=agent.agent_type,
+            input_payload={
+                "instruction": "Plan claims release",
+                "team_members": [
+                    {
+                        "name": "Iris Chen",
+                        "role": "Engineer",
+                        "skills": ["identity", "backend"],
+                        "load_pct": 64,
+                    }
+                ],
+                "timeline_weeks": 6,
+                "committed_revenue_usd": 1250000,
+            },
+        )
+        db.add_all([session, task])
+        await db.commit()
+        await db.refresh(task)
+
+    await planning_agent.run(task, pricing.id)
+
+    async with AsyncSessionLocal() as db:
+        runs = list(await db.scalars(select(AgentRun).where(AgentRun.task_id == task.id)))
+
+    parent = [run for run in runs if run.run_type == "WORKFLOW_PARENT"]
+    capacity_node = [run for run in runs if run.agent_id == "node_capacity_check"]
+    assert len(parent) == 1
+    assert len(capacity_node) == 1
+    assert parent[0].status == "COMPLETE"
+    assert capacity_node[0].status == "COMPLETE"
+    assert capacity_node[0].output_payload["overloaded_members"] == [
+        {"name": "Marta Silva", "load_pct": 50}
+    ]
+
+
+@pytest.mark.asyncio
+async def test_project_planning_workflow_repairs_truncated_synthesize_string() -> None:
+    llm = FakeLLM(workflow_responses_with_truncated_synthesize_string())
+    sse = SSEEmitter()
+    manager = AgentOpsManager(sse, QualityQueue(sse), CostCalculator())
+    planning_agent = ProjectPlanningAgent(llm, manager)
+
+    async with AsyncSessionLocal() as db:
+        session = Session(name="Workflow Truncated Synthesize Test")
+        agent = await db.get(AgentDefinition, "agent-project-planning")
+        pricing = await db.get(ModelPricing, "price-ollama-llama32-3b")
+        assert agent is not None
+        assert pricing is not None
+        task = Task(
+            session=session,
+            agent_id=agent.id,
+            domain=agent.domain,
+            task_type=agent.agent_type,
+            input_payload={
+                "instruction": "Plan Northstar portal recovery",
+                "team_members": [
+                    {
+                        "name": "Iris Chen",
+                        "role": "Engineer",
+                        "skills": ["identity", "backend"],
+                        "load_pct": 64,
+                    }
+                ],
+                "timeline_weeks": 4,
+                "committed_revenue_usd": 520000,
+            },
+        )
+        db.add_all([session, task])
+        await db.commit()
+        await db.refresh(task)
+
+    await planning_agent.run(task, pricing.id)
+
+    async with AsyncSessionLocal() as db:
+        runs = list(await db.scalars(select(AgentRun).where(AgentRun.task_id == task.id)))
+
+    parent = [run for run in runs if run.run_type == "WORKFLOW_PARENT"]
+    synthesize_node = [run for run in runs if run.agent_id == "node_synthesize"]
+    assert len(parent) == 1
+    assert len(synthesize_node) == 1
+    assert parent[0].status == "COMPLETE"
+    assert synthesize_node[0].status == "COMPLETE"
+    assert parent[0].output_payload["project_title"] == "Northstar Portal Phase 1 Recovery Plan"
+    assert parent[0].output_payload["timeline_weeks"] == 4
+    assert parent[0].output_payload["key_recommendations"][0]["name"].startswith(
+        "Develop a release readiness checklist"
+    )
 
 
 @pytest.mark.asyncio

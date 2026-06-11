@@ -4,6 +4,7 @@ from typing import Any
 from sqlalchemy import select
 
 from app.agentops.context import RunContext
+from app.agents.parsing import parse_json_object
 from app.core.database import AsyncSessionLocal
 from app.llm.client import LLMClient
 from app.models.agent_definition import AgentDefinition
@@ -29,10 +30,13 @@ EVALUATION RUBRIC:
 Score relevance, faithfulness, completeness, and actionability from 0.0 to 1.0.
 Respond ONLY with valid JSON containing relevance, faithfulness, completeness,
 actionability, composite, and reasoning_trace.
-"""
+        """
         try:
             response = await self.llm.complete(prompt, model=self.llm.settings.quality_judge_model)
-            scores = json.loads(response.text.strip())
+            scores = parse_json_object(
+                response.text,
+                required=["relevance", "faithfulness", "completeness", "actionability"],
+            )
         except Exception as exc:
             return {
                 "quality_score": 0.0,

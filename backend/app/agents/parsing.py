@@ -20,6 +20,8 @@ _STRING_LITERAL_OBJECT_VALUE = re.compile(
 _KEYLESS_NAME_ARRAY_PROPERTY = re.compile(
     rf'(\{{\s*"name"\s*:\s*{_STRING}\s*,\s*)(\[[^\[\]{{}}]*\])(\s*\}})'
 )
+_PERCENT_LITERAL = re.compile(rf"(:\s*)({_NUMBER})%(\s*[,}}\]])")
+_TRAILING_COMMA = re.compile(r",(\s*[\]}])")
 
 
 def parse_json_object(
@@ -70,11 +72,13 @@ def _extract_json(raw: str) -> str:
 
 def _repair_common_model_json_defects(text: str, *, keyless_array_property: str) -> str:
     repaired = _NUMERIC_EXPRESSION.sub(_replace_numeric_expression, text)
+    repaired = _PERCENT_LITERAL.sub(_replace_percent_literal, repaired)
     repaired = _STRING_LITERAL_OBJECT_VALUE.sub(_replace_string_literal_object, repaired)
     repaired = _KEYLESS_NAME_ARRAY_PROPERTY.sub(
         lambda match: _replace_keyless_name_array_property(match, keyless_array_property),
         repaired,
     )
+    repaired = _TRAILING_COMMA.sub(r"\1", repaired)
     return _append_missing_closers(repaired)
 
 
@@ -121,6 +125,11 @@ def _replace_keyless_name_array_property(
 ) -> str:
     prefix, values, suffix = match.groups()
     return f'{prefix}"{property_name}": {values}{suffix}'
+
+
+def _replace_percent_literal(match: re.Match[str]) -> str:
+    prefix, value, suffix = match.groups()
+    return f"{prefix}{float(value) / 100:.12g}{suffix}"
 
 
 def _evaluate_numeric_expression(expression: str) -> str:
@@ -170,5 +179,9 @@ def _append_missing_closers(text: str) -> str:
             stack.pop()
         elif char == "]" and stack and stack[-1] == "[":
             stack.pop()
+    if in_string:
+        if escaped:
+            text = text[:-1]
+        text += '"'
     closers = {"{": "}", "[": "]"}
     return text + "".join(closers[opener] for opener in reversed(stack))

@@ -16,11 +16,13 @@ Delivery confidence: {state['confidence_score']}
 Committed revenue: ${state['committed_revenue_usd']:,}
 
 Synthesize a final project plan readable by a VP in 30 seconds.
+Keep epics_with_assignments, top_risks, and key_recommendations to at most 5
+items each. Prefer concise strings over deeply nested detail.
 Return JSON with project_title, executive_summary, delivery_confidence,
 revenue_at_risk_usd, epics_with_assignments, top_risks, key_recommendations,
 and timeline_weeks.
 {JSON_ONLY}"""
-    response = await llm.complete(prompt)
+    response = await llm.complete(prompt, max_tokens=1800)
     ctx.raw_prompt = prompt
     ctx.model_used = response.model
     ctx.raw_response = response.text
@@ -35,9 +37,9 @@ and timeline_weeks.
             "epics_with_assignments",
             "top_risks",
             "key_recommendations",
-            "timeline_weeks",
         ],
     )
+    data.setdefault("timeline_weeks", state["timeline_weeks"])
     state["node_traces"].append(
         {
             "node": "synthesize",

@@ -2,6 +2,7 @@ import asyncio
 import time
 
 import pytest
+from sqlalchemy import select
 
 from app.core.database import AsyncSessionLocal
 from app.models.agent_run import AgentRun
@@ -188,3 +189,51 @@ async def test_batch_executor_runs_tasks_concurrently(monkeypatch) -> None:
 
     assert set(calls) == {"a", "b", "c"}
     assert elapsed < 0.12
+
+
+@pytest.mark.asyncio
+async def test_batch_executor_contains_worker_failures(monkeypatch) -> None:
+    calls: list[str] = []
+
+    async def fake_execute_task(task_id: str, registry, model_pricing_id: str) -> None:
+        calls.append(task_id)
+        if task_id == "b":
+            raise RuntimeError("worker exploded")
+
+    monkeypatch.setattr(task_router, "execute_task", fake_execute_task)
+
+    await task_router.execute_tasks_concurrently(
+        [("a", object(), "p"), ("b", object(), "p"), ("c", object(), "p")]
+    )
+
+    assert calls == ["a", "b", "c"]
+
+
+@pytest.mark.asyncio
+async def test_execute_task_marks_unfinished_task_failed() -> None:
+    class BrokenRegistry:
+        def get(self, agent_id: str):
+            raise RuntimeError("registry unavailable")
+
+    async with AsyncSessionLocal() as db:
+        session_id = "router-session-failure"
+        db.add(
+            Task(
+                session_id=session_id,
+                agent_id="agent-sprint-risk",
+                domain="PROJECT_DELIVERY",
+                task_type="sprint_risk_assessment",
+                input_payload={},
+            )
+        )
+        await db.commit()
+        task = await db.scalar(select(Task).where(Task.session_id == session_id))
+        assert task is not None
+        task_id = task.id
+
+    await task_router.execute_task(task_id, BrokenRegistry(), "price-ollama-llama32-3b")
+
+    async with AsyncSessionLocal() as db:
+        task = await db.get(Task, task_id)
+        assert task is not None
+        assert task.status == "FAILED"

@@ -5,6 +5,16 @@ from app.agents.parsing import JSON_ONLY, parse_json_object
 from app.agents.workflow.state import ProjectPlanState
 
 
+def _normalize_capacity_assessment(data: dict[str, Any]) -> dict[str, Any]:
+    if "overloaded_members" not in data:
+        team_capacity = data.get("team_capacity")
+        if isinstance(team_capacity, dict) and "overloaded_members" in team_capacity:
+            data = {**data, "overloaded_members": team_capacity["overloaded_members"]}
+    if "overloaded_members" not in data:
+        raise ValueError("Missing required field: overloaded_members")
+    return data
+
+
 async def run(state: ProjectPlanState, ctx: RunContext, llm: Any) -> ProjectPlanState:
     prompt = f"""You are a capacity planning analyst.
 
@@ -30,13 +40,13 @@ Return one JSON object with these fields:
         response.text,
         required=[
             "team_capacity",
-            "overloaded_members",
             "skill_gaps",
             "capacity_risk_level",
             "capacity_notes",
         ],
         keyless_array_property="missing_skills",
     )
+    data = _normalize_capacity_assessment(data)
     state["node_traces"].append(
         {
             "node": "capacity_check",

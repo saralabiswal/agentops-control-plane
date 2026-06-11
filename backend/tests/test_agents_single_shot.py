@@ -193,6 +193,62 @@ def test_delivery_forecast_repairs_string_literal_object_assumptions() -> None:
     ]
 
 
+def test_resource_allocation_repairs_trailing_comma_in_nested_summary() -> None:
+    agent = make_agent(ResourceAllocationAgent)
+
+    parsed = agent.parse_output(
+        """
+        {
+          "assignments": [
+            {"id": "AUTH-41", "member": "Iris Chen", "hours": 18},
+            {"id": "PORTAL-87", "member": "Samir Gupta", "hours": 24}
+          ],
+          "overloaded_members": ["Marta Silva"],
+          "underutilized_members": [],
+          "efficiency_gain_pct": 10,
+          "hours_saved_estimate": 20,
+          "confidence_score": 0.8,
+          "summary": {
+            "assignments": [
+              {"id": "AUTH-41", "member": "Iris Chen", "hours": 18}
+            ],
+          }
+        }
+        """
+    )
+
+    assert parsed["summary"]["assignments"][0]["id"] == "AUTH-41"
+    assert parsed["hours_saved_estimate"] == 20
+
+
+def test_churn_signal_repairs_unquoted_percent_literals() -> None:
+    agent = make_agent(ChurnSignalAgent)
+
+    parsed = agent.parse_output(
+        """
+        {
+          "churn_probability": 0.43,
+          "signal_strength": 7.5,
+          "days_to_act": 50,
+          "early_intervention_value_usd": 15000,
+          "top_signals": [
+            {
+              "signal_name": "Finance Admin Login Frequency Decrease",
+              "frequency_change": -38%
+            }
+          ],
+          "recommended_play": "Schedule QBR with economic buyer",
+          "urgency": "High",
+          "confidence_score": 0.8,
+          "summary": "Account has material churn risk."
+        }
+        """
+    )
+
+    assert parsed["churn_probability"] == 0.43
+    assert parsed["top_signals"][0]["frequency_change"] == pytest.approx(-0.38)
+
+
 @pytest.mark.asyncio
 async def test_base_agent_run_uses_agentops_contract(agentops, session_task) -> None:
     _session, task, _agent, pricing = session_task

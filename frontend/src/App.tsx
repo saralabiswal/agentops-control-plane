@@ -1189,6 +1189,7 @@ type BusinessStorySummary = {
   impact: number
   cost: number
   quality: string
+  qualityDetail: string
   agentCount: number
   runCount: number
   completeRuns: number
@@ -1339,6 +1340,22 @@ function summarizeStoryDomain(
   }
 }
 
+function decisionReadiness(score: number | null): { value: string; detail: string } {
+  if (score === null) {
+    return { value: 'Pending', detail: 'awaiting completed outcome evidence' }
+  }
+  const percent = `${Math.round(score * 100)}%`
+  if (score >= 0.8) return { value: 'Ready', detail: `${percent} evidence confidence` }
+  if (score >= 0.65) return { value: 'Review', detail: `${percent} evidence confidence` }
+  if (score >= 0.5) return { value: 'Needs review', detail: `${percent} evidence confidence` }
+  return { value: 'At risk', detail: `${percent} evidence confidence` }
+}
+
+function hasJudgeInfrastructureFailure(run: AgentRun) {
+  const trace = run.quality_dimensions?.reasoning_trace
+  return typeof trace === 'string' && trace.toLowerCase().includes('judge failed')
+}
+
 function buildBusinessStorySummary(
   scope: RunScope,
   outcomes: BusinessOutcome[],
@@ -1351,14 +1368,26 @@ function buildBusinessStorySummary(
   const scopedRuns = billableRuns(runs).filter((run) =>
     domainKeys.some((domain) => runBelongsToStoryDomain(run, domain)),
   )
+  const outcomeRunIds = new Set(
+    outcomes
+      .filter((outcome) => domainKeys.some((domain) => outcomeBelongsToStoryDomain(outcome, domain)))
+      .map((outcome) => outcome.agent_run_id),
+  )
   const qualityScores = scopedRuns
+    .filter(
+      (run) =>
+        run.status === 'COMPLETE' &&
+        outcomeRunIds.has(run.id) &&
+        !hasJudgeInfrastructureFailure(run),
+    )
     .map((run) => run.quality_score)
     .filter((score): score is number => typeof score === 'number')
   const impact = domains.reduce((sum, domain) => sum + domain.impact, 0)
   const cost = domains.reduce((sum, domain) => sum + domain.cost, 0)
-  const quality = qualityScores.length
-    ? (qualityScores.reduce((sum, score) => sum + score, 0) / qualityScores.length).toFixed(2)
-    : 'pending'
+  const averageQuality = qualityScores.length
+    ? qualityScores.reduce((sum, score) => sum + score, 0) / qualityScores.length
+    : null
+  const qualitySignal = decisionReadiness(averageQuality)
   const agentCount = domains.reduce((sum, domain) => sum + domain.agentCount, 0)
   const runCount = domains.reduce((sum, domain) => sum + domain.runCount, 0)
   const completeRuns = domains.reduce((sum, domain) => sum + domain.completeRuns, 0)
@@ -1377,7 +1406,8 @@ function buildBusinessStorySummary(
       story: `No ${scopeLabel} run has completed in this session yet. Start the selected scope to generate live Project Management and Revenue Management outcomes, evidence, and cost.`,
       impact,
       cost,
-      quality,
+      quality: qualitySignal.value,
+      qualityDetail: qualitySignal.detail,
       agentCount,
       runCount,
       completeRuns,
@@ -1398,7 +1428,8 @@ function buildBusinessStorySummary(
       story: `${scopeLabel} has ${runCount} billable run${runCount === 1 ? '' : 's'} captured at ${costMoney(cost)} total cost. No financial outcome rows were produced yet, so inspect trace and failed runs before approving a business result.`,
       impact,
       cost,
-      quality,
+      quality: qualitySignal.value,
+      qualityDetail: qualitySignal.detail,
       agentCount,
       runCount,
       completeRuns,
@@ -1421,7 +1452,8 @@ function buildBusinessStorySummary(
     story: `${scopeLabel} converted completed agent outputs into live outcome-ledger value. ${domainDetail}. Total run cost for this scope is ${costMoney(cost)}, including token, API-call, and compute charges.`,
     impact,
     cost,
-    quality,
+    quality: qualitySignal.value,
+    qualityDetail: qualitySignal.detail,
     agentCount,
     runCount,
     completeRuns,
@@ -2391,7 +2423,11 @@ function BusinessView({
           value={String(storySummary.runCount)}
           detail={`${storySummary.completeRuns} complete, ${storySummary.failedRuns} failed`}
         />
-        <Kpi label="Quality" value={storySummary.quality} detail="async judge score" />
+        <Kpi
+          label="Decision readiness"
+          value={storySummary.quality}
+          detail={storySummary.qualityDetail}
+        />
         <Kpi
           label="Financial impact"
           value={money(storySummary.impact)}
@@ -3685,7 +3721,7 @@ function ArchitectureView({
           <article className="architecture-metric">
             <span>Quality signal</span>
             <strong>{qualityLabel(runs)}</strong>
-            <p>async judge score</p>
+            <p>run trust evidence</p>
           </article>
           <article className="architecture-metric">
             <span>Outcome value</span>

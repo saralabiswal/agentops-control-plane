@@ -85,6 +85,34 @@ async def test_quality_judge_normalizes_nested_and_percent_scores() -> None:
 
 
 @pytest.mark.asyncio
+async def test_quality_judge_repairs_common_model_json_defects() -> None:
+    llm = FakeLLM(
+        [
+            llm_response(
+                """
+                ```json
+                {
+                  "relevance": 0.8,
+                  "faithfulness": 0.75,
+                  "completeness": 0.7,
+                  "actionability": 0.85,
+                  "reasoning_trace": "Business output is usable.",
+                }
+                ```
+                """
+            )
+        ]
+    )
+    judge = QualityJudgeAgent(llm)
+
+    scores = await judge.score(context())
+
+    assert scores["quality_score"] == pytest.approx(0.775)
+    assert scores["quality_actionability"] == 0.85
+    assert scores["quality_dimensions"]["reasoning_trace"] == "Business output is usable."
+
+
+@pytest.mark.asyncio
 async def test_quality_queue_worker_updates_run_and_emits_sse(session_task) -> None:
     session, task, agent, pricing = session_task
     ctx = context()
