@@ -1,0 +1,141 @@
+<svg width="1600" height="1600" viewBox="0 0 1600 1600" role="img" aria-labelledby="title desc" xmlns="http://www.w3.org/2000/svg">
+  <title id="title">AgentOps Control Plane - system architecture</title>
+  <desc id="desc">Overall system architecture showing React, FastAPI, AgentOps governance, agents, LLM providers, data, quality scoring, outcomes, and server-sent events.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M1 1 L9 5 L1 9" fill="none" stroke="context-stroke" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <filter id="shadow" x="-8%" y="-8%" width="116%" height="116%">
+      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#161513" flood-opacity="0.12"/>
+    </filter>
+    <style>
+      .bg { fill: #f5f4f2; }
+      .title { font: 800 44px Inter, "Segoe UI", system-ui, sans-serif; fill: #161513; letter-spacing: 0; }
+      .subtitle { font: 500 20px Inter, "Segoe UI", system-ui, sans-serif; fill: #665f56; }
+      .label { font: 800 23px Inter, "Segoe UI", system-ui, sans-serif; fill: #161513; }
+      .small { font: 500 17px Inter, "Segoe UI", system-ui, sans-serif; fill: #665f56; }
+      .tiny { font: 700 14px Inter, "Segoe UI", system-ui, sans-serif; fill: #665f56; text-transform: uppercase; }
+      .box { fill: #ffffff; stroke: #ded9d2; stroke-width: 2; filter: url(#shadow); }
+      .brand { fill: #fff8f7; stroke: #c74634; }
+      .blue { fill: #eef5fc; stroke: #2672b9; }
+      .green { fill: #ecf6ed; stroke: #3a7d44; }
+      .warn { fill: #fff3df; stroke: #ac630c; }
+      .purple { fill: #f0edff; stroke: #5f4bb6; }
+      .dark { fill: #161513; stroke: #161513; }
+      .chipText { font: 800 15px Inter, "Segoe UI", system-ui, sans-serif; fill: #161513; }
+      .chip { fill: #fbf9f7; stroke: #ded9d2; stroke-width: 1.4; }
+      .arrow { stroke: #8a8178; stroke-width: 3; fill: none; marker-end: url(#arrow); }
+      .event { stroke: #3a7d44; stroke-width: 3; stroke-dasharray: 9 8; fill: none; marker-end: url(#arrow); }
+      .flowLabel { font: 800 14px Inter, "Segoe UI", system-ui, sans-serif; fill: #8a8178; }
+    </style>
+  </defs>
+
+  <rect class="bg" width="1600" height="1600"/>
+  <text x="80" y="82" class="title">AgentOps Control Plane</text>
+  <text x="80" y="116" class="subtitle">Production management layer for governed agent execution, cost attribution, quality scoring,</text>
+  <text x="80" y="144" class="subtitle">and financial outcomes.</text>
+
+  <rect x="80" y="190" width="230" height="150" rx="8" class="box dark"/>
+  <text x="112" y="236" class="label" style="fill:#ffffff">Enterprise users</text>
+  <text x="112" y="272" class="small" style="fill:#d8d2cb">Business view</text>
+  <text x="112" y="302" class="small" style="fill:#d8d2cb">Technical view</text>
+
+  <rect x="395" y="168" width="300" height="195" rx="8" class="box green"/>
+  <text x="430" y="213" class="label">React + Vite UI</text>
+  <text x="430" y="247" class="small">Scope selector, guided demo,</text>
+  <text x="430" y="274" class="small">run ledger, charts, live feed</text>
+  <rect x="430" y="304" width="105" height="36" rx="6" class="chip"/>
+  <text x="482" y="328" text-anchor="middle" class="chipText">HTTP</text>
+  <rect x="552" y="304" width="105" height="36" rx="6" class="chip"/>
+  <text x="604" y="328" text-anchor="middle" class="chipText">SSE</text>
+
+  <rect x="780" y="168" width="350" height="195" rx="8" class="box blue"/>
+  <text x="815" y="213" class="label">FastAPI surface</text>
+  <text x="815" y="247" class="small">Typed routers under /api/v1</text>
+  <text x="815" y="274" class="small">tasks, runs, sessions, metrics,</text>
+  <text x="815" y="301" class="small">outcomes, settings, stream</text>
+  <rect x="815" y="321" width="120" height="34" rx="6" class="chip"/>
+  <text x="875" y="344" text-anchor="middle" class="chipText">Async API</text>
+  <rect x="954" y="321" width="136" height="34" rx="6" class="chip"/>
+  <text x="1022" y="344" text-anchor="middle" class="chipText">CORS 5173</text>
+
+  <rect x="80" y="440" width="1390" height="250" rx="8" class="box brand"/>
+  <text x="122" y="486" class="label">AgentOps governance boundary</text>
+  <text x="122" y="520" class="small">AgentOpsManager.run_context() is the single path from agent execution to persisted observability.</text>
+
+  <rect x="122" y="556" width="250" height="94" rx="8" fill="#ffffff" stroke="#fe6954" stroke-width="2"/>
+  <text x="150" y="590" class="tiny">Lifecycle</text>
+  <text x="150" y="621" class="small">RUNNING before execution</text>
+  <text x="150" y="646" class="small">COMPLETE / FAILED</text>
+
+  <rect x="415" y="556" width="250" height="94" rx="8" fill="#ffffff" stroke="#fe6954" stroke-width="2"/>
+  <text x="443" y="590" class="tiny">Cost</text>
+  <text x="443" y="621" class="small">Tokens normalized</text>
+  <text x="443" y="646" class="small">Price locked at write time</text>
+
+  <rect x="708" y="556" width="250" height="94" rx="8" fill="#ffffff" stroke="#fe6954" stroke-width="2"/>
+  <text x="736" y="590" class="tiny">Trace</text>
+  <text x="736" y="621" class="small">Prompt and raw response</text>
+  <text x="736" y="646" class="small">Output payload persisted</text>
+
+  <rect x="1001" y="556" width="205" height="94" rx="8" fill="#ffffff" stroke="#fe6954" stroke-width="2"/>
+  <text x="1029" y="590" class="tiny">Events</text>
+  <text x="1029" y="621" class="small">run_started</text>
+  <text x="1029" y="646" class="small">completed / failed</text>
+
+  <rect x="1248" y="556" width="180" height="94" rx="8" fill="#ffffff" stroke="#fe6954" stroke-width="2"/>
+  <text x="1276" y="590" class="tiny">Quality</text>
+  <text x="1276" y="621" class="small">Async enqueue</text>
+  <text x="1276" y="646" class="small">Nonblocking</text>
+
+  <rect x="80" y="790" width="310" height="210" rx="8" class="box purple"/>
+  <text x="115" y="835" class="label">Agent registry</text>
+  <text x="115" y="869" class="small">Single-shot agents and</text>
+  <text x="115" y="896" class="small">ProjectPlanning LangGraph</text>
+  <text x="115" y="936" class="small">Project Management: 4 agents</text>
+  <text x="115" y="963" class="small">Revenue Management: 3 agents</text>
+
+  <rect x="455" y="790" width="280" height="210" rx="8" class="box warn"/>
+  <text x="490" y="835" class="label">LLM providers</text>
+  <text x="490" y="869" class="small">LLMClient.complete()</text>
+  <text x="490" y="909" class="small">Ollama default</text>
+  <text x="490" y="936" class="small">Groq and Gemini adapters</text>
+  <text x="490" y="963" class="small">Failures recorded on runs</text>
+
+  <rect x="800" y="790" width="295" height="210" rx="8" class="box blue"/>
+  <text x="835" y="835" class="label">Data store</text>
+  <text x="835" y="869" class="small">SQLite via async SQLAlchemy</text>
+  <text x="835" y="909" class="small">AgentRun audit anchor</text>
+  <text x="835" y="936" class="small">Metric time-series shape</text>
+  <text x="835" y="963" class="small">BusinessOutcome ledger</text>
+
+  <rect x="1160" y="790" width="310" height="210" rx="8" class="box green"/>
+  <text x="1195" y="835" class="label">Outcome layer</text>
+  <text x="1195" y="869" class="small">QualityJudgeAgent scores</text>
+  <text x="1195" y="896" class="small">4 quality dimensions</text>
+  <text x="1195" y="936" class="small">Risk mitigated, ARR protected,</text>
+  <text x="1195" y="963" class="small">recoverable quota gap</text>
+
+  <path d="M310 265 H395" class="arrow"/>
+  <text x="334" y="248" class="flowLabel">use</text>
+  <path d="M695 265 H780" class="arrow"/>
+  <text x="713" y="248" class="flowLabel">fetch</text>
+  <path d="M955 363 V440" class="arrow"/>
+  <text x="973" y="402" class="flowLabel">dispatch</text>
+  <path d="M355 690 L235 790" class="arrow"/>
+  <path d="M600 690 L595 790" class="arrow"/>
+  <path d="M830 690 L947 790" class="arrow"/>
+  <path d="M1120 690 L1315 790" class="arrow"/>
+  <path d="M1160 790 C1125 730 1150 415 1130 363" class="event"/>
+  <text x="1180" y="420" class="flowLabel" fill="#3a7d44">SSE stream</text>
+  <path d="M1160 895 H1095" class="arrow"/>
+  <path d="M800 895 H735" class="arrow"/>
+  <path d="M455 895 H390" class="arrow"/>
+
+  <rect x="1195" y="172" width="275" height="184" rx="8" fill="#fbf9f7" stroke="#ded9d2" stroke-width="2"/>
+  <text x="1230" y="215" class="tiny">Agent contract</text>
+  <text x="1230" y="250" class="small">Agents populate exactly:</text>
+  <text x="1230" y="280" class="small">prompt, input tokens, output</text>
+  <text x="1230" y="307" class="small">tokens, raw response,</text>
+  <text x="1230" y="334" class="small">validated output payload</text>
+</svg>

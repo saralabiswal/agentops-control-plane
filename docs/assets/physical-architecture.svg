@@ -1,0 +1,109 @@
+<svg width="1600" height="1600" viewBox="0 0 1600 1600" role="img" aria-labelledby="title desc" xmlns="http://www.w3.org/2000/svg">
+  <title id="title">AgentOps Control Plane - physical architecture</title>
+  <desc id="desc">Physical runtime topology showing local or Docker services, ports, environment variables, database file, external LLM providers, and browser access.</desc>
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="8.5" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path d="M1 1 L9 5 L1 9" fill="none" stroke="context-stroke" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+    </marker>
+    <filter id="shadow" x="-8%" y="-8%" width="116%" height="116%">
+      <feDropShadow dx="0" dy="8" stdDeviation="10" flood-color="#161513" flood-opacity="0.12"/>
+    </filter>
+    <style>
+      .bg { fill: #f5f4f2; }
+      .title { font: 800 44px Inter, "Segoe UI", system-ui, sans-serif; fill: #161513; }
+      .subtitle { font: 500 20px Inter, "Segoe UI", system-ui, sans-serif; fill: #665f56; }
+      .label { font: 800 24px Inter, "Segoe UI", system-ui, sans-serif; fill: #161513; }
+      .small { font: 500 17px Inter, "Segoe UI", system-ui, sans-serif; fill: #665f56; }
+      .mini { font: 800 14px Inter, "Segoe UI", system-ui, sans-serif; fill: #665f56; }
+      .box { fill: #ffffff; stroke: #ded9d2; stroke-width: 2; filter: url(#shadow); }
+      .host { fill: #fbf9f7; stroke: #8a8178; stroke-width: 3; }
+      .frontend { fill: #ecf6ed; stroke: #3a7d44; }
+      .backend { fill: #eef5fc; stroke: #2672b9; }
+      .control { fill: #fff8f7; stroke: #c74634; }
+      .provider { fill: #fff3df; stroke: #ac630c; }
+      .data { fill: #eef5fc; stroke: #2672b9; }
+      .external { fill: #f0edff; stroke: #5f4bb6; }
+      .item { fill: #ffffff; stroke: #ded9d2; stroke-width: 1.5; }
+      .arrow { stroke: #8a8178; stroke-width: 3; fill: none; marker-end: url(#arrow); }
+      .greenArrow { stroke: #3a7d44; stroke-width: 3; stroke-dasharray: 9 8; fill: none; marker-end: url(#arrow); }
+      .orangeArrow { stroke: #ac630c; stroke-width: 3; fill: none; marker-end: url(#arrow); }
+    </style>
+  </defs>
+
+  <rect class="bg" width="1600" height="1600"/>
+  <text x="80" y="82" class="title">Physical Architecture</text>
+  <text x="80" y="116" class="subtitle">Local development and Docker topology for the running AgentOps Control Plane.</text>
+
+  <rect x="80" y="170" width="230" height="150" rx="8" class="box"/>
+  <text x="115" y="215" class="label">Browser</text>
+  <text x="115" y="249" class="small">http://localhost:5173</text>
+  <text x="115" y="283" class="small">Fetch API and EventSource</text>
+
+  <rect x="395" y="145" width="845" height="655" rx="12" class="box host"/>
+  <text x="435" y="197" class="label">Developer workstation or Docker Compose network</text>
+  <text x="435" y="230" class="small">Two application services, one local database file, optional local Ollama runtime.</text>
+
+  <rect x="445" y="280" width="285" height="190" rx="8" class="box frontend"/>
+  <text x="480" y="324" class="label">frontend service</text>
+  <text x="480" y="357" class="small">React 18, Vite, TypeScript</text>
+  <text x="480" y="390" class="small">Port: 5173</text>
+  <text x="480" y="423" class="small">Build context: ./frontend</text>
+
+  <rect x="830" y="280" width="340" height="190" rx="8" class="box backend"/>
+  <text x="865" y="324" class="label">backend service</text>
+  <text x="865" y="357" class="small">FastAPI, async SQLAlchemy</text>
+  <text x="865" y="390" class="small">Port: 8000</text>
+  <text x="865" y="423" class="small">Build context: ./backend</text>
+
+  <rect x="830" y="530" width="340" height="205" rx="8" class="box control"/>
+  <text x="865" y="574" class="label">Runtime graph</text>
+  <text x="865" y="607" class="small">Settings, LLMClient, SSEEmitter</text>
+  <text x="865" y="640" class="small">AgentOpsManager, AgentRegistry</text>
+  <text x="865" y="673" class="small">QualityQueue worker</text>
+  <text x="865" y="706" class="small">Seed data and stale-run recovery</text>
+
+  <rect x="445" y="530" width="285" height="205" rx="8" class="box data"/>
+  <text x="480" y="574" class="label">agentops.db</text>
+  <text x="480" y="607" class="small">SQLite local persistence</text>
+  <text x="480" y="640" class="small">Default DATABASE_URL:</text>
+  <text x="480" y="673" class="small">sqlite+aiosqlite:///./agentops.db</text>
+  <text x="480" y="706" class="small">TimescaleDB-ready metrics</text>
+
+  <rect x="1285" y="220" width="235" height="180" rx="8" class="box provider"/>
+  <text x="1320" y="264" class="label">Ollama</text>
+  <text x="1320" y="297" class="small">Default provider</text>
+  <text x="1320" y="330" class="small">localhost:11434</text>
+  <text x="1320" y="363" class="small">Docker host alias</text>
+
+  <rect x="1285" y="470" width="235" height="205" rx="8" class="box external"/>
+  <text x="1320" y="514" class="label">Cloud providers</text>
+  <text x="1320" y="547" class="small">Groq API</text>
+  <text x="1320" y="580" class="small">Gemini API</text>
+  <text x="1320" y="613" class="small">Selected by provider</text>
+  <text x="1320" y="646" class="small">runtime config</text>
+
+  <rect x="120" y="600" width="190" height="128" rx="8" class="box"/>
+  <text x="155" y="642" class="label">Operator</text>
+  <text x="155" y="675" class="small">make dev</text>
+  <text x="155" y="705" class="small">docker compose up</text>
+
+  <path d="M310 245 H445" class="arrow"/>
+  <text x="338" y="228" class="mini">GET app</text>
+  <path d="M730 374 H830" class="arrow"/>
+  <text x="745" y="356" class="mini">/api/v1</text>
+  <path d="M830 405 H730" class="greenArrow"/>
+  <text x="744" y="440" class="mini">SSE events</text>
+  <path d="M1000 470 V530" class="arrow"/>
+  <path d="M830 632 H730" class="arrow"/>
+  <path d="M1170 360 H1285" class="orangeArrow"/>
+  <text x="1190" y="343" class="mini">LLM calls</text>
+  <path d="M1170 585 H1285" class="orangeArrow"/>
+  <text x="1190" y="568" class="mini">API calls</text>
+  <path d="M310 664 H445" class="arrow"/>
+  <text x="340" y="647" class="mini">start services</text>
+
+  <rect x="395" y="845" width="845" height="120" rx="8" class="box"/>
+  <text x="435" y="880" class="mini">Important runtime configuration</text>
+  <text x="435" y="910" class="small">AGENTOPS_OLLAMA_HOST | AGENTOPS_ACTIVE_PROVIDER | AGENTOPS_GROQ_API_KEY</text>
+  <text x="435" y="938" class="small">AGENTOPS_GEMINI_API_KEY | AGENTOPS_DATABASE_URL</text>
+</svg>

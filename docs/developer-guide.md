@@ -5,6 +5,25 @@
 This guide explains how the code is organized, how a run flows through the
 platform, and where to make changes when extending the app.
 
+## Architecture Diagrams
+
+The project keeps rendered architecture assets under `docs/assets/`.
+
+![AgentOps Control Plane system architecture](assets/architecture.png)
+
+**System architecture** — end-to-end request, execution, governance, provider,
+data, quality, and outcome flow.
+
+![AgentOps Control Plane logical architecture](assets/logical-architecture.png)
+
+**Logical architecture** — ownership boundaries across experience, API,
+orchestration, control plane, provider, data, quality, and outcome layers.
+
+![AgentOps Control Plane physical architecture](assets/physical-architecture.png)
+
+**Physical architecture** — local development and Docker runtime topology,
+ports, service boundaries, database, and provider configuration.
+
 ## System Flow
 
 The application is split into experience, API, orchestration, provider, and
