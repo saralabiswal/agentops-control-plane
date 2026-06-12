@@ -11,7 +11,9 @@ from app.models.agent_run import AgentRun
 from app.models.business_outcome import BusinessOutcome
 from app.models.session import Session
 from app.models.task import Task
+from app.schemas.business_outcome import BusinessOutcomeSchema
 from app.schemas.session import SessionCreateRequest, SessionDetailSchema, SessionSchema
+from app.schemas.task import TaskSchema
 
 router = APIRouter()
 
@@ -49,8 +51,10 @@ async def get_session(session_id: str, db: AsyncSession = Depends(get_db)) -> di
         select(BusinessOutcome).join(Task).where(Task.session_id == session_id)
     )
     data = SessionSchema.model_validate(session).model_dump()
-    data["tasks"] = [task.__dict__ for task in tasks]
-    data["outcomes"] = [outcome.__dict__ for outcome in outcomes]
+    data["tasks"] = [TaskSchema.model_validate(task).model_dump() for task in tasks]
+    data["outcomes"] = [
+        BusinessOutcomeSchema.model_validate(outcome).model_dump() for outcome in outcomes
+    ]
     return data
 
 

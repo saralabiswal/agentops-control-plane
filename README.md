@@ -46,7 +46,7 @@ uses: risk mitigated, ARR protected, pipeline gap recovered.
 
 ## Architecture
 
-![AgentOps Control Plane Architecture](docs/assets/architecture.png)
+![AgentOps Control Plane Architecture](docs/architecture/agentops-control-plane-architecture.svg)
 
 The platform is organized around explicit backend ownership boundaries: API
 submission, durable task execution, AgentOps governance, bounded observability,

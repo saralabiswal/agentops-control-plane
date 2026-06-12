@@ -174,6 +174,10 @@ async def test_run_and_outcome_endpoints_return_expected_schema(client) -> None:
     assert client.get("/api/v1/runs/router-run-original").status_code == 200
     assert client.get("/api/v1/runs/router-run-original/quality").status_code == 200
     assert client.get("/api/v1/runs/router-run-original/retries").status_code == 200
+    session_detail = client.get(f"/api/v1/sessions/{session_id}")
+    assert session_detail.status_code == 200
+    assert session_detail.json()["tasks"][0]["id"] == task.id
+    assert "_sa_instance_state" not in session_detail.text
     assert client.get(f"/api/v1/outcomes/session/{session_id}").status_code == 200
     assert client.get("/api/v1/outcomes/router-run-original").status_code == 200
 

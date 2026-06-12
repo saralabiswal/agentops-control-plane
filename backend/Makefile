@@ -17,7 +17,7 @@ typecheck:
 	uv run mypy app/
 
 migrate:
-	uv run alembic upgrade head
+	uv run python -m alembic upgrade head
 
 postgres-migrate-smoke:
 	uv run python -m app.core.postgres_validation
