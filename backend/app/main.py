@@ -9,12 +9,13 @@ from app.agentops.cost_calculator import CostCalculator
 from app.agentops.manager import AgentOpsManager, recover_stale_runs
 from app.agentops.quality_queue import QualityQueue
 from app.agentops.sse_emitter import SSEEmitter
+from app.agentops.task_queue import TaskWorker, recover_stale_tasks
 from app.agents.platform.quality_judge import QualityJudgeAgent
 from app.agents.registry import AgentRegistry
-from app.core.config import Settings
-from app.core.database import engine
+from app.core.config import get_settings
+from app.core.database import dispose_engine, engine
+from app.core.migrations import assert_database_migrated
 from app.llm.client import LLMClient
-from app.models import Base
 from app.routers import catalog, metrics, outcomes, runs, sessions, settings, stream, tasks
 from app.seed.seed import run_seed
 
@@ -24,11 +25,10 @@ __author__ = "Sarala Biswal"
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     """Create the runtime graph shared by all API routers for this process."""
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+    await assert_database_migrated(engine)
     await run_seed()
 
-    settings = Settings()
+    settings = get_settings()
     llm = LLMClient(settings)
     sse = SSEEmitter()
     quality_q = QualityQueue(sse)
@@ -42,10 +42,25 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
     app.state.agentops = agentops
     app.state.registry = registry
 
+    task_worker = TaskWorker(
+        lambda: app.state.registry,
+        max_concurrent_tasks=settings.max_concurrent_agents,
+    )
+    app.state.task_worker = task_worker
+
     quality_worker = asyncio.create_task(quality_q.worker(judge))
     await recover_stale_runs()
+    await recover_stale_tasks()
+    task_worker.start()
     yield
+    await task_worker.stop()
     quality_worker.cancel()
+    try:
+        await quality_worker
+    except asyncio.CancelledError:
+        pass
+    await llm.aclose()
+    await dispose_engine()
 
 
 app = FastAPI(title="AgentOps Control Plane", lifespan=lifespan)

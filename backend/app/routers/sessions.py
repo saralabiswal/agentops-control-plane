@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 from typing import Any
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -28,8 +28,14 @@ async def create_session(
 
 
 @router.get("/sessions", response_model=list[SessionSchema])
-async def list_sessions(db: AsyncSession = Depends(get_db)) -> list[Session]:
-    result = await db.scalars(select(Session).order_by(Session.started_at.desc()))
+async def list_sessions(
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    db: AsyncSession = Depends(get_db),
+) -> list[Session]:
+    result = await db.scalars(
+        select(Session).order_by(Session.started_at.desc()).offset(offset).limit(limit)
+    )
     return list(result)
 
 

@@ -1,4 +1,4 @@
-.PHONY: install dev test lint typecheck migrate seed docker-up docker-down
+.PHONY: install dev test lint typecheck migrate seed postgres-migrate-smoke docker-up docker-down
 
 install:
 	uv sync --extra dev
@@ -18,6 +18,9 @@ typecheck:
 
 migrate:
 	uv run alembic upgrade head
+
+postgres-migrate-smoke:
+	uv run python -m app.core.postgres_validation
 
 seed:
 	uv run python -m app.seed.seed

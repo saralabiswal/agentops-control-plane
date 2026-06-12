@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class AgentDefinitionSchema(BaseModel):
@@ -51,8 +51,6 @@ class AgentRunSchema(BaseModel):
     cost_usd: float
     status: str
     error_message: str | None
-    raw_prompt: str
-    raw_response: str
     output_payload: dict[str, Any]
     quality_score: float | None
     quality_relevance: float | None
@@ -60,12 +58,24 @@ class AgentRunSchema(BaseModel):
     quality_completeness: float | None
     quality_actionability: float | None
     quality_dimensions: dict[str, Any] | None
+    quality_status: str | None
+    quality_error: str | None
+    quality_attempt_count: int
     ran_at: datetime
     completed_at: datetime | None
 
 
 class AgentRunDetailSchema(AgentRunSchema):
-    child_runs: list[dict[str, Any]] = []
+    child_runs: list[AgentRunSchema] = Field(default_factory=list)
+
+
+class AgentRunTraceSchema(AgentRunSchema):
+    raw_prompt: str
+    raw_response: str
+
+
+class AgentRunTraceDetailSchema(AgentRunTraceSchema):
+    child_runs: list[AgentRunTraceSchema] = Field(default_factory=list)
 
 
 class QualityDetailSchema(BaseModel):
@@ -76,3 +86,6 @@ class QualityDetailSchema(BaseModel):
     quality_completeness: float | None
     quality_actionability: float | None
     quality_dimensions: dict[str, Any] | None
+    quality_status: str | None = None
+    quality_error: str | None = None
+    quality_attempt_count: int = 0

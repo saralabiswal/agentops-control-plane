@@ -31,6 +31,12 @@ class BaseLLMAdapter(Protocol):
 
 
 @runtime_checkable
+class SupportsClose(Protocol):
+    async def aclose(self) -> None:
+        ...
+
+
+@runtime_checkable
 class SupportsModelResolution(Protocol):
     def resolve_model(self, model: str) -> str:
         ...

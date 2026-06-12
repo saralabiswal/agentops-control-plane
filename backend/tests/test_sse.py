@@ -3,7 +3,7 @@ from datetime import UTC, datetime
 import pytest
 
 from app.agentops.context import RunContext
-from app.agentops.sse_emitter import SSEEmitter
+from app.agentops.sse_emitter import SSEEmitter, format_sse_message
 from app.core.enums import RunType
 
 
@@ -24,9 +24,13 @@ async def test_sse_emitter_publishes_to_subscriber() -> None:
 
     await emitter.emit_run_started(ctx)
 
-    event = await queue.get()
+    message = await queue.get()
+    event = format_sse_message(message)
+    assert message.payload["event"] == "run_started"
+    assert message.payload["run_id"] == "run-1"
+    assert "id: 1" in event
+    assert "data:" in event
     assert "run_started" in event
-    assert "run-1" in event
 
 
 def test_sse_emitter_unsubscribes() -> None:

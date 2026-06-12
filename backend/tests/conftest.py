@@ -4,12 +4,15 @@ from dataclasses import dataclass
 import pytest
 import pytest_asyncio
 from fastapi.testclient import TestClient
+from sqlalchemy import text
 
 from app.agentops.cost_calculator import CostCalculator
 from app.agentops.manager import AgentOpsManager
 from app.agentops.quality_queue import QualityQueue
 from app.agentops.sse_emitter import SSEEmitter
+from app.core.config import Settings, get_settings
 from app.core.database import AsyncSessionLocal, engine
+from app.core.migrations import current_alembic_heads
 from app.llm.base import LLMResponse, TokenUsage
 from app.models import Base
 from app.models.agent_definition import AgentDefinition
@@ -21,9 +24,21 @@ from app.seed.seed import run_seed
 
 @pytest_asyncio.fixture(autouse=True)
 async def clean_db() -> AsyncIterator[None]:
+    settings = get_settings()
+    for key, value in Settings().model_dump().items():
+        setattr(settings, key, value)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
         await conn.run_sync(Base.metadata.create_all)
+        await conn.execute(
+            text("CREATE TABLE IF NOT EXISTS alembic_version (version_num VARCHAR(32) NOT NULL)")
+        )
+        await conn.execute(text("DELETE FROM alembic_version"))
+        for head in current_alembic_heads():
+            await conn.execute(
+                text("INSERT INTO alembic_version (version_num) VALUES (:version_num)"),
+                {"version_num": head},
+            )
     await run_seed()
     yield
 

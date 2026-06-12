@@ -53,6 +53,9 @@ class AgentRun(Base):
     quality_completeness: Mapped[float | None] = mapped_column(Float)
     quality_actionability: Mapped[float | None] = mapped_column(Float)
     quality_dimensions: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    quality_status: Mapped[str | None] = mapped_column(String(20))
+    quality_error: Mapped[str | None] = mapped_column(Text)
+    quality_attempt_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
 
     ran_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False

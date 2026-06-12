@@ -1,8 +1,11 @@
 import pytest
-from sqlalchemy import update
+from sqlalchemy import select, update
 
 from app.core.database import AsyncSessionLocal
+from app.models.agent_run import AgentRun
 from app.models.model_pricing import ModelPricing
+from app.models.session import Session
+from app.models.task import Task
 from app.seed.pricing import (
     DEMO_COST_ELEVATION_MULTIPLIER,
     GCP_API_CALL_COST_PER_1K,
@@ -93,3 +96,62 @@ async def test_seed_updates_existing_pricing_rows() -> None:
         pricing.compute_memory_gib_cost_per_second
         == LOCAL_DEMO_COMPUTE_MEMORY_GIB_COST_PER_SECOND
     )
+
+
+@pytest.mark.asyncio
+async def test_seed_expires_referenced_pricing_instead_of_mutating_it() -> None:
+    async with AsyncSessionLocal() as db:
+        session = Session(name="Historical Pricing")
+        db.add(session)
+        await db.flush()
+        task = Task(
+            session_id=session.id,
+            agent_id="agent-sprint-risk",
+            domain="PROJECT_DELIVERY",
+            task_type="sprint_risk_assessment",
+            input_payload={},
+        )
+        db.add(task)
+        await db.flush()
+        db.add(
+            AgentRun(
+                id="historical-pricing-run",
+                task_id=task.id,
+                agent_id="agent-sprint-risk",
+                model_pricing_id="price-ollama-llama32-3b",
+                run_type="SINGLE_SHOT",
+                model_used="llama3.2:3b",
+                status="COMPLETE",
+                raw_prompt="prompt",
+                raw_response="{}",
+                output_payload={},
+            )
+        )
+        await db.execute(
+            update(ModelPricing)
+            .where(ModelPricing.id == "price-ollama-llama32-3b")
+            .values(input_cost_per_1k=0.0, output_cost_per_1k=0.0)
+        )
+        await db.commit()
+
+    await run_seed()
+
+    async with AsyncSessionLocal() as db:
+        historical = await db.get(ModelPricing, "price-ollama-llama32-3b")
+        active_rows = list(
+            await db.scalars(
+                select(ModelPricing).where(
+                    ModelPricing.provider == "ollama",
+                    ModelPricing.model_name == "llama3.2:3b",
+                    ModelPricing.effective_to.is_(None),
+                )
+            )
+        )
+
+    assert historical is not None
+    assert historical.input_cost_per_1k == 0.0
+    assert historical.output_cost_per_1k == 0.0
+    assert historical.effective_to is not None
+    assert len(active_rows) == 1
+    assert active_rows[0].id != historical.id
+    assert active_rows[0].input_cost_per_1k == LOCAL_DEMO_INPUT_COST_PER_1K

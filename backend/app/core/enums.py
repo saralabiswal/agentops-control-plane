@@ -13,6 +13,12 @@ class RunStatus(StrEnum):
     FAILED = "FAILED"
 
 
+class QualityStatus(StrEnum):
+    PENDING = "PENDING"
+    SCORED = "SCORED"
+    FAILED = "FAILED"
+
+
 class Domain(StrEnum):
     PROJECT_DELIVERY = "PROJECT_DELIVERY"
     REVENUE_OPS = "REVENUE_OPS"
@@ -35,4 +41,3 @@ class TaskPriority(StrEnum):
     LOW = "LOW"
     NORMAL = "NORMAL"
     HIGH = "HIGH"
-

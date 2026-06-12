@@ -1,8 +1,10 @@
+import time
 from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import pytest
 
+from app.core.config import get_settings
 from app.core.database import AsyncSessionLocal
 from app.models.agent_run import AgentRun
 from app.models.business_outcome import BusinessOutcome
@@ -29,11 +31,15 @@ class RecordingRegistry:
 
 
 class StaticLLM:
-    def __init__(self, model: str) -> None:
+    def __init__(self, model: str, provider: str = "ollama") -> None:
         self.model = model
+        self.provider = provider
 
     def active_model(self) -> str:
         return self.model
+
+    def active_provider(self) -> str:
+        return self.provider
 
 
 def sprint_payload() -> dict[str, Any]:
@@ -47,11 +53,32 @@ def sprint_payload() -> dict[str, Any]:
     }
 
 
-def test_task_submission_uses_active_model_pricing(client) -> None:
+def wait_for(condition, timeout_seconds: float = 1.0) -> None:
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        if condition():
+            return
+        time.sleep(0.01)
+    assert condition()
+
+
+@pytest.mark.asyncio
+async def test_task_submission_uses_active_provider_model_pricing(client) -> None:
     recorder = RecordingAgent()
     client.app.state.registry = RecordingRegistry(recorder)
     client.app.state.llm = StaticLLM("llama3.2:latest")
     session_id = client.post("/api/v1/sessions", json={"name": "Pricing Selection"}).json()["id"]
+    async with AsyncSessionLocal() as db:
+        db.add(
+            ModelPricing(
+                id="price-gemini-name-collision",
+                provider="gemini",
+                model_name="llama3.2:latest",
+                input_cost_per_1k=9.0,
+                output_cost_per_1k=9.0,
+            )
+        )
+        await db.commit()
 
     response = client.post(
         "/api/v1/tasks",
@@ -64,9 +91,45 @@ def test_task_submission_uses_active_model_pricing(client) -> None:
     )
 
     assert response.status_code == 200
+    await client.app.state.task_worker.run_until_idle()
+    wait_for(lambda: len(recorder.calls) == 1)
     assert recorder.calls == [
         (response.json()["id"], "price-ollama-llama32-latest", None),
     ]
+
+
+@pytest.mark.asyncio
+async def test_task_submission_rejects_duplicate_active_pricing_rows(client) -> None:
+    client.app.state.llm = StaticLLM("llama3.2:latest")
+    session_id = client.post("/api/v1/sessions", json={"name": "Duplicate Pricing"}).json()["id"]
+    async with AsyncSessionLocal() as db:
+        db.add(
+            ModelPricing(
+                id="price-ollama-duplicate-active",
+                provider="ollama",
+                model_name="llama3.2:latest",
+                input_cost_per_1k=1.0,
+                output_cost_per_1k=1.0,
+            )
+        )
+        await db.commit()
+
+    response = client.post(
+        "/api/v1/tasks",
+        json={
+            "agent_id": "agent-sprint-risk",
+            "session_id": session_id,
+            "input_payload": sprint_payload(),
+            "priority": "HIGH",
+        },
+    )
+
+    assert response.status_code == 400
+    assert "Multiple active pricing rows" in response.json()["detail"]
+
+
+def test_app_uses_cached_settings_provider(client) -> None:
+    assert client.app.state.settings is get_settings()
 
 
 @pytest.mark.asyncio
@@ -109,6 +172,8 @@ async def test_retry_task_passes_prior_run_id_and_active_model_pricing(client) -
 
     assert response.status_code == 200
     retry_task_id = response.json()["id"]
+    await client.app.state.task_worker.run_until_idle()
+    wait_for(lambda: len(recorder.calls) == 1)
     assert retry_task_id != task_id
     assert recorder.calls == [(retry_task_id, "price-ollama-llama32-latest", "prior-run")]
 
@@ -231,8 +296,23 @@ async def test_run_filters_detail_children_and_quality_endpoint(client) -> None:
     assert [run["id"] for run in by_status] == ["filter-failed"]
     assert {run["id"] for run in by_window} == {"filter-child", "filter-failed"}
     assert [run["id"] for run in detail["child_runs"]] == ["filter-child"]
+    assert "raw_prompt" not in detail
+    assert "raw_response" not in detail
+    assert "raw_prompt" not in detail["child_runs"][0]
     assert quality["quality_score"] == 0.8
     assert quality["quality_dimensions"] == {"reasoning_trace": "ok"}
+
+    client.app.state.settings.trace_api_key = "trace-secret"
+    unauthenticated_trace = client.get("/api/v1/runs/filter-parent/trace")
+    authenticated_trace = client.get(
+        "/api/v1/runs/filter-parent/trace",
+        headers={"X-API-Key": "trace-secret"},
+    )
+    assert unauthenticated_trace.status_code == 401
+    assert authenticated_trace.status_code == 200
+    assert authenticated_trace.json()["raw_prompt"] == "plan"
+    assert authenticated_trace.json()["child_runs"][0]["raw_prompt"] == "decompose"
+    client.app.state.settings.trace_api_key = ""
 
 
 @pytest.mark.asyncio

@@ -1,5 +1,5 @@
 from app.core.config import Settings
-from app.llm.base import BaseLLMAdapter, LLMResponse, SupportsModelResolution
+from app.llm.base import BaseLLMAdapter, LLMResponse, SupportsClose, SupportsModelResolution
 from app.llm.gemini import GeminiAdapter
 from app.llm.groq import GroqAdapter
 from app.llm.ollama import OllamaAdapter
@@ -43,3 +43,8 @@ class LLMClient:
 
     def available_providers(self) -> list[str]:
         return [name for name, adapter in self._adapters.items() if adapter.is_available()]
+
+    async def aclose(self) -> None:
+        for adapter in self._adapters.values():
+            if isinstance(adapter, SupportsClose):
+                await adapter.aclose()

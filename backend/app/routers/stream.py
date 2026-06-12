@@ -5,6 +5,8 @@ from uuid import uuid4
 from fastapi import APIRouter, Request
 from fastapi.responses import StreamingResponse
 
+from app.agentops.sse_emitter import format_sse_message
+
 router = APIRouter()
 
 
@@ -33,9 +35,9 @@ def _stream(request: Request, session_id: str | None = None) -> StreamingRespons
                 if await request.is_disconnected():
                     break
                 try:
-                    data = await asyncio.wait_for(queue.get(), timeout=15.0)
-                    if session_id is None or f'"session_id": "{session_id}"' in data:
-                        yield data
+                    message = await asyncio.wait_for(queue.get(), timeout=15.0)
+                    if session_id is None or message.payload.get("session_id") == session_id:
+                        yield format_sse_message(message)
                 except TimeoutError:
                     yield ": heartbeat\n\n"
         finally:

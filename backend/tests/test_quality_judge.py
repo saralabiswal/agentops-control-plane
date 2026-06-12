@@ -167,5 +167,60 @@ async def test_quality_queue_worker_updates_run_and_emits_sse(session_task) -> N
     event = await subscriber.get()
     assert run is not None
     assert run.quality_score == 0.9
+    assert run.quality_status == "SCORED"
+    assert run.quality_error is None
+    assert run.quality_attempt_count == 1
     assert quality_metric is not None
-    assert "quality_scored" in event
+    assert event.payload["event"] == "quality_scored"
+
+
+class FailingJudge:
+    def __init__(self) -> None:
+        self.calls = 0
+
+    async def score(self, ctx: RunContext) -> dict:
+        self.calls += 1
+        raise RuntimeError("judge unavailable")
+
+
+@pytest.mark.asyncio
+async def test_quality_queue_records_failure_without_killing_worker(session_task) -> None:
+    session, task, agent, pricing = session_task
+    ctx = context()
+    ctx.run_id = "quality-failed-run"
+    ctx.task_id = task.id
+    ctx.agent_id = agent.id
+    ctx.session_id = session.id
+    ctx.model_pricing_id = pricing.id
+    queue = QualityQueue(max_attempts=2, retry_delay_seconds=0)
+
+    async with AsyncSessionLocal() as db:
+        db.add(
+            AgentRun(
+                id=ctx.run_id,
+                task_id=ctx.task_id,
+                agent_id=ctx.agent_id,
+                model_pricing_id=ctx.model_pricing_id,
+                run_type="SINGLE_SHOT",
+                model_used=ctx.model_used,
+                status="COMPLETE",
+                raw_prompt=ctx.raw_prompt,
+                raw_response=ctx.raw_response,
+                output_payload=ctx.output_payload,
+            )
+        )
+        await db.commit()
+
+    judge = FailingJudge()
+    await queue.enqueue(ctx)
+    await queue.worker(judge, stop_when_empty=True)
+
+    async with AsyncSessionLocal() as db:
+        run = await db.get(AgentRun, ctx.run_id)
+
+    assert judge.calls == 2
+    assert run is not None
+    assert run.quality_status == "FAILED"
+    assert run.quality_error == "RuntimeError: judge unavailable"
+    assert run.quality_attempt_count == 2
+    assert queue.queue.empty()

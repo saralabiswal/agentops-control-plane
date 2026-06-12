@@ -294,8 +294,8 @@ async def test_sse_emitted_on_start_and_complete(agentops, session_task) -> None
     started = await queue.get()
     completed = await queue.get()
 
-    assert "run_started" in started
-    assert "run_completed" in completed
+    assert started.payload["event"] == "run_started"
+    assert completed.payload["event"] == "run_completed"
 
 
 @pytest.mark.asyncio

@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING
 from uuid import uuid4
 
-from sqlalchemy import DateTime, Float, String
+from sqlalchemy import DateTime, Float, Index, String
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models import Base
@@ -13,6 +13,14 @@ if TYPE_CHECKING:
 
 class ModelPricing(Base):
     __tablename__ = "model_pricing"
+    __table_args__ = (
+        Index(
+            "ix_model_pricing_provider_model_effective",
+            "provider",
+            "model_name",
+            "effective_to",
+        ),
+    )
 
     id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid4()))
     provider: Mapped[str] = mapped_column(String(40), nullable=False, index=True)

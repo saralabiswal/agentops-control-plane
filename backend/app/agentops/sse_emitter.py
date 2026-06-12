@@ -1,6 +1,6 @@
 import asyncio
 import json
-from dataclasses import asdict
+from dataclasses import asdict, dataclass
 from datetime import datetime
 from enum import StrEnum
 from typing import Any
@@ -18,10 +18,11 @@ def _json_default(value: Any) -> str:
 
 class SSEEmitter:
     def __init__(self) -> None:
-        self._subscribers: dict[str, asyncio.Queue[str]] = {}
+        self._subscribers: dict[str, asyncio.Queue[SSEMessage]] = {}
+        self._event_id = 0
 
-    def subscribe(self, subscriber_id: str) -> asyncio.Queue[str]:
-        queue: asyncio.Queue[str] = asyncio.Queue(maxsize=100)
+    def subscribe(self, subscriber_id: str) -> asyncio.Queue["SSEMessage"]:
+        queue: asyncio.Queue[SSEMessage] = asyncio.Queue(maxsize=100)
         self._subscribers[subscriber_id] = queue
         return queue
 
@@ -39,13 +40,24 @@ class SSEEmitter:
 
     async def _publish(self, event: str, ctx: RunContext) -> None:
         payload = {"event": event, **asdict(ctx)}
-        data = f"data: {json.dumps(payload, default=_json_default)}\n\n"
+        self._event_id += 1
+        message = SSEMessage(event_id=str(self._event_id), payload=payload)
         dead: list[str] = []
         for subscriber_id, queue in self._subscribers.items():
             try:
-                queue.put_nowait(data)
+                queue.put_nowait(message)
             except asyncio.QueueFull:
                 dead.append(subscriber_id)
         for subscriber_id in dead:
             self.unsubscribe(subscriber_id)
 
+
+@dataclass(frozen=True)
+class SSEMessage:
+    event_id: str
+    payload: dict[str, Any]
+
+
+def format_sse_message(message: SSEMessage) -> str:
+    data = json.dumps(message.payload, default=_json_default)
+    return f"id: {message.event_id}\ndata: {data}\n\n"

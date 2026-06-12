@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
-from sqlalchemy import JSON, DateTime, ForeignKey, String
+from sqlalchemy import JSON, DateTime, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.enums import TaskPriority, TaskStatus
@@ -27,6 +27,11 @@ class Task(Base):
     input_payload: Mapped[dict[str, Any]] = mapped_column(JSON, nullable=False)
     priority: Mapped[str] = mapped_column(String(20), default=TaskPriority.NORMAL, nullable=False)
     status: Mapped[str] = mapped_column(String(20), default=TaskStatus.QUEUED, nullable=False)
+    model_pricing_id: Mapped[str | None] = mapped_column(ForeignKey("model_pricing.id"))
+    retry_of_run_id: Mapped[str | None] = mapped_column(String)
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    claimed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    last_error: Mapped[str | None] = mapped_column(Text)
     submitted_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
     )

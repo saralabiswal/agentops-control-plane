@@ -47,10 +47,12 @@ class RejectingAdapter(Adapter):
 
 
 class FakeAsyncClient:
-    def __init__(self, payload: dict[str, Any]) -> None:
-        self.payload = payload
+    def __init__(self, payload: dict[str, Any] | list[dict[str, Any]]) -> None:
+        self.payloads = payload if isinstance(payload, list) else [payload]
         self.calls: list[dict[str, Any]] = []
         self.timeout: float | None = None
+        self.closed = False
+        self.close_count = 0
 
     def factory(self, timeout: float) -> "FakeAsyncClient":
         self.timeout = timeout
@@ -64,7 +66,17 @@ class FakeAsyncClient:
 
     async def post(self, url: str, **kwargs: Any) -> httpx.Response:
         self.calls.append({"url": url, **kwargs})
-        return httpx.Response(200, request=httpx.Request("POST", url), json=self.payload)
+        payload = self.payloads[min(len(self.calls) - 1, len(self.payloads) - 1)]
+        status_code = int(payload.pop("_status_code", 200))
+        return httpx.Response(
+            status_code,
+            request=httpx.Request("POST", url),
+            json=payload,
+        )
+
+    async def aclose(self) -> None:
+        self.closed = True
+        self.close_count += 1
 
 
 @pytest.mark.asyncio
@@ -208,6 +220,42 @@ async def test_gemini_adapter_posts_generate_content_and_normalizes_response(mon
     assert response.text == "gemini text"
     assert response.model == "gemini-2.0-flash"
     assert response.usage.total_tokens == 7
+
+
+@pytest.mark.asyncio
+async def test_provider_adapter_retries_transient_errors(monkeypatch) -> None:
+    fake_client = FakeAsyncClient(
+        [
+            {"_status_code": 500, "error": "temporary"},
+            {
+                "model": "llama-3.3-70b-versatile",
+                "choices": [{"message": {"content": "recovered"}}],
+                "usage": {
+                    "prompt_tokens": 1,
+                    "completion_tokens": 2,
+                    "total_tokens": 3,
+                },
+            },
+        ]
+    )
+    monkeypatch.setattr(httpx, "AsyncClient", fake_client.factory)
+
+    response = await GroqAdapter(api_key="secret", max_retries=1).complete("prompt", "model-a")
+
+    assert len(fake_client.calls) == 2
+    assert response.text == "recovered"
+
+
+@pytest.mark.asyncio
+async def test_llm_client_closes_owned_provider_clients(monkeypatch) -> None:
+    fake_client = FakeAsyncClient({})
+    monkeypatch.setattr(httpx, "AsyncClient", fake_client.factory)
+    client = LLMClient(Settings(active_provider="groq", groq_api_key="key"))
+
+    await client.aclose()
+
+    assert fake_client.closed is True
+    assert fake_client.close_count == 2
 
 
 @pytest.mark.asyncio
