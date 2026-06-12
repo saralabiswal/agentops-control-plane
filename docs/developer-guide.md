@@ -95,6 +95,311 @@ The ProjectPlanning workflow is the only multi-node agent. The UI surfaces its
 user input directly in the Business View run console, then the backend executes
 the workflow from decomposition through synthesis.
 
+## Code Flow By Run Mode
+
+The frontend uses the same execution function for platform, domain, and
+single-agent runs: `submitAgents()` in `frontend/src/App.tsx`. The difference is
+the list of agent IDs and the scenario payloads passed into the batch request.
+
+### A. Complete Platform Run
+
+A complete platform run starts when `scope === "platform"` and the user clicks
+the primary run action.
+
+1. `runSelectedScope()` reads `scopeAgentIds.platform`.
+
+   Input:
+
+   ```ts
+   [
+     "agent-sprint-risk",
+     "agent-resource-alloc",
+     "agent-delivery-forecast",
+     "agent-project-planning",
+     "agent-renewal-risk",
+     "agent-churn-signal",
+     "agent-pipeline-forecast",
+   ]
+   ```
+
+   Output: `submitAgents(agentIds, "Complete Platform", message)` is called.
+
+2. `submitAgents()` calls `ensureSession()`.
+
+   Input: current React `session` state.
+
+   Output: an existing `Session`, or a new one created by:
+
+   ```http
+   POST /api/v1/sessions
+   Content-Type: application/json
+
+   {"name":"Demo Session <time>"}
+   ```
+
+   Response shape:
+
+   ```json
+   {
+     "id": "session-id",
+     "name": "Demo Session 10:15:00 PM",
+     "status": "ACTIVE",
+     "total_cost_usd": 0,
+     "total_tasks": 0,
+     "success_rate": 0,
+     "avg_quality_score": 0
+   }
+   ```
+
+3. `submitAgents()` builds one `TaskSubmit` per agent.
+
+   Input: active Project Management scenario, active Revenue Management
+   scenario, editable ProjectPlanning input, and the session ID.
+
+   Output:
+
+   ```json
+   {
+     "tasks": [
+       {
+         "agent_id": "agent-sprint-risk",
+         "session_id": "session-id",
+         "input_payload": {"sprint_name": "..."},
+         "priority": "HIGH"
+       },
+       {
+         "agent_id": "agent-renewal-risk",
+         "session_id": "session-id",
+         "input_payload": {"account_name": "..."},
+         "priority": "HIGH"
+       }
+     ]
+   }
+   ```
+
+   The real request contains seven tasks: four Project Management tasks and
+   three Revenue Management tasks.
+
+4. `api.tasks.batch()` sends the durable batch request.
+
+   Request:
+
+   ```http
+   POST /api/v1/tasks/batch
+   Content-Type: application/json
+   ```
+
+   Backend call path:
+
+   ```text
+   frontend/src/api/client.ts
+   -> backend/app/routers/tasks.py::submit_batch()
+   -> _pricing_id()
+   -> INSERT Task rows with status QUEUED
+   ```
+
+   Backend input: each task needs `agent_id`, `session_id`, `input_payload`, and
+   optional `priority`.
+
+   Backend output: a list of persisted task rows:
+
+   ```json
+   [
+     {
+       "id": "task-id",
+       "session_id": "session-id",
+       "agent_id": "agent-sprint-risk",
+       "domain": "PROJECT_DELIVERY",
+       "task_type": "sprint_risk_assessment",
+       "input_payload": {"sprint_name": "..."},
+       "priority": "HIGH",
+       "status": "QUEUED",
+       "submitted_at": "2026-06-12T05:00:00",
+       "started_at": null,
+       "completed_at": null
+     }
+   ]
+   ```
+
+5. `submitAgents()` stores frontend progress state.
+
+   Input: returned task IDs and payloads grouped by agent.
+
+   Output: `activeRun` state with `agentIds`, `taskIds`, `payloads`,
+   `scenarioTitles`, and `startedAt`. This state drives the run progress bar and
+   payload preview.
+
+6. `TaskWorker` claims and executes queued tasks.
+
+   Backend call path:
+
+   ```text
+   backend/app/agentops/task_queue.py::TaskWorker.process_once()
+   -> _claim_queued_tasks()
+   -> execute_tasks_concurrently()
+   -> execute_task()
+   -> AgentRegistry.get(agent_id).run()
+   ```
+
+   Input: `Task` rows with `status = QUEUED` and a resolved
+   `model_pricing_id`.
+
+   Output: claimed tasks move to `RUNNING` with `started_at`, `claimed_at`, and
+   incremented `attempt_count`.
+
+7. Each agent enters `AgentOpsManager.run_context()`.
+
+   Input:
+
+   ```text
+   task_id, agent_id, session_id, active model, model_pricing_id, run_type
+   ```
+
+   Output before the LLM call: an `AgentRun` row with `status = RUNNING`, plus a
+   structured `run_started` SSE event.
+
+8. The agent builds a prompt, calls the provider, and parses output.
+
+   Backend call path for single-shot agents:
+
+   ```text
+   backend/app/agents/base.py::BaseAgent.run()
+   -> build_prompt(task.input_payload)
+   -> LLMClient.complete(prompt)
+   -> parse_output(raw_response)
+   ```
+
+   Input: agent-specific payload from the selected demo scenario.
+
+   Output: parsed `output_payload`, token counts, model name, raw prompt, and raw
+   response stored on the run context.
+
+9. `AgentOpsManager` finalizes the run.
+
+   Output:
+
+   ```text
+   AgentRun: COMPLETE or FAILED
+   Task: COMPLETE or FAILED
+   Metric rows: latency_ms, cost_usd, prompt_tokens, completion_tokens
+   BusinessOutcome: written for completed runs with usable output
+   SSE: run_completed
+   QualityQueue: queued for asynchronous scoring
+   ```
+
+10. The UI refreshes evidence.
+
+    Calls:
+
+    ```http
+    GET /api/v1/runs?session_id=<session-id>
+    GET /api/v1/outcomes/session/<session-id>
+    ```
+
+    Output: updated run evidence, domain breakdown, cost, quality, and business
+    outcome totals.
+
+### B. Project Management Run
+
+A Project Management run uses the same pipeline with a smaller agent set and
+only Project Management scenario inputs.
+
+1. `runSelectedScope()` reads `scopeAgentIds.project`.
+
+   Input:
+
+   ```ts
+   [
+     "agent-sprint-risk",
+     "agent-resource-alloc",
+     "agent-delivery-forecast",
+     "agent-project-planning",
+   ]
+   ```
+
+   Output: `submitAgents(agentIds, "Project Management", message)` is called.
+
+2. `submitAgents()` resolves payloads through `payloadForAgent(agentId)`.
+
+   Input by agent:
+
+   | Agent | Payload source |
+   |---|---|
+   | `agent-sprint-risk` | `currentProjectScenario.payloads["agent-sprint-risk"]` |
+   | `agent-resource-alloc` | `currentProjectScenario.payloads["agent-resource-alloc"]` |
+   | `agent-delivery-forecast` | `currentProjectScenario.payloads["agent-delivery-forecast"]` |
+   | `agent-project-planning` | editable `projectPlanningInput` converted by `projectPlanningPayloadFrom()` |
+
+   Output: four `TaskSubmit` objects with the same `session_id` and
+   `priority = "HIGH"`.
+
+3. `POST /api/v1/tasks/batch` persists four durable task rows.
+
+   Backend input:
+
+   ```json
+   {
+     "tasks": [
+       {"agent_id": "agent-sprint-risk", "session_id": "session-id", "input_payload": {}, "priority": "HIGH"},
+       {"agent_id": "agent-resource-alloc", "session_id": "session-id", "input_payload": {}, "priority": "HIGH"},
+       {"agent_id": "agent-delivery-forecast", "session_id": "session-id", "input_payload": {}, "priority": "HIGH"},
+       {"agent_id": "agent-project-planning", "session_id": "session-id", "input_payload": {}, "priority": "HIGH"}
+     ]
+   }
+   ```
+
+   Backend output: four `TaskSchema` rows in `QUEUED` status.
+
+4. `TaskWorker` executes the three single-shot Project Management agents.
+
+   Input:
+
+   ```text
+   sprint risk payload
+   resource allocation payload
+   delivery forecast payload
+   ```
+
+   Output:
+
+   ```text
+   one AgentRun per task
+   one parsed output payload per agent
+   task statuses updated to COMPLETE or FAILED
+   business outcomes written for completed outputs
+   ```
+
+5. `ProjectPlanningAgent` executes as a LangGraph workflow.
+
+   Input: editable project-planning payload from the UI.
+
+   Output:
+
+   ```text
+   one WORKFLOW_PARENT AgentRun
+   child AgentRun records for Decompose, Capacity, Risk, Assign, and Synthesize
+   final synthesized project plan in output_payload
+   BusinessOutcome linked to the parent run when complete
+   ```
+
+6. The UI updates Project Management evidence.
+
+   Calls:
+
+   ```http
+   GET /api/v1/runs?session_id=<session-id>
+   GET /api/v1/outcomes/session/<session-id>
+   ```
+
+   Output: Project Management run progress, sprint risk evidence, allocation
+   evidence, delivery forecast evidence, workflow trace summary, quality scores,
+   cost, and financial impact.
+
+Both run modes use `EventSource("/api/v1/stream/runs")` through `useSSE()`.
+The stream emits structured `run_started`, `run_completed`, and
+`quality_scored` events. The frontend treats those events as refresh triggers;
+the authoritative state still comes from the run and outcome APIs.
+
 ## Backend Runtime
 
 `backend/app/main.py` builds the runtime graph during FastAPI startup:
