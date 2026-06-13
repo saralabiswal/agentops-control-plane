@@ -20,27 +20,81 @@
 
 ## The Business Problem
 
-Enterprise teams deploying AI agents into production hit the same wall after the demo
-stage: the agents run, they produce outputs, and the organization has no coherent answer
-to the questions that actually determine whether this is a production system or an
-expensive experiment.
+Enterprise teams deploying AI agents hit the same wall after the demo: the agents run,
+outputs are produced, and the organization has no coherent answer to the questions that
+determine whether this is a managed production system or an expensive experiment.
 
-- Which agents ran, when, and did they complete or fail?
-- What did each run cost, attributed to the decision it was making?
-- Is output quality improving or degrading across runs?
-- What financial outcome did this agent decision actually drive?
-
-Without answers to these questions, AI agents are not managed systems. They are black
-boxes with business consequences that nobody can explain to a CFO or defend in an
-engineering post-mortem.
+| Question | Why it matters |
+|---|---|
+| Which agents ran, when, and did they succeed or fail? | Without this, you cannot own the reliability SLA |
+| What did each run cost, attributed to the decision it was making? | Without this, you cannot defend the budget |
+| Is output quality improving or degrading across runs? | Without this, you cannot detect silent regression |
+| What financial outcome did this agent decision actually drive? | Without this, you cannot justify the investment |
 
 The gap is not the model. The gap is the management layer — observability, cost
-attribution, quality measurement, and financial accountability — that was never built.
+attribution, quality measurement, and financial accountability — that was never built
+because teams moved from prototype to deployment without building the infrastructure
+that production requires.
 
-**AgentOps Control Plane is that management layer.** It traces every agent run,
-attributes every dollar of compute cost, scores every output asynchronously, and
-connects agent decisions to financial outcomes expressed in the language finance already
-uses: risk mitigated, ARR protected, pipeline gap recovered.
+**AgentOps Control Plane is that management layer.**
+
+It traces every agent run, attributes every dollar of compute cost to the decision that
+triggered it, scores every output asynchronously, and connects agent decisions to
+financial outcomes expressed in the language finance already uses: risk mitigated, ARR
+protected, pipeline gap recovered.
+
+---
+
+## How It Solves the Problem
+
+The platform is organized around one design decision: the control plane is the
+foundation. Agents are plugged into it. Most teams do this in reverse — agents run first,
+observability gets bolted on later. That inversion is why production AI is hard to own.
+
+### 1. Enforced observability, not optional logging
+
+Agents execute inside `AgentOpsManager.run_context()`. This is the only path agents have
+to the database. Agents populate exactly 5 fields — prompt, tokens, response, output,
+and a validated payload. AgentOps owns everything else: run record creation, cost
+computation, metrics emission, quality scoring, and outcome attachment. A run is COMPLETE
+or FAILED. There is no third state.
+
+### 2. Financial accountability as a first-class output
+
+Every agent produces a dollar-value business outcome, persisted to a `BusinessOutcome`
+record linked directly to the `AgentRun` that produced it. Outcomes are expressed in
+formulas tied to real business metrics — ARR at risk, delivery cost exposure, quota gap
+recovery. A complete platform run produces a cross-domain outcome ledger.
+
+A representative run across all agents:
+
+| Agent | Outcome metric | Value | Confidence |
+|---|---|---|---|
+| SprintRiskAgent | `delivery_risk_mitigated_usd` | $15,000 | 0.70 |
+| ProjectPlanningAgent | `pipeline_confidence_gap_usd` | $120,000 | 0.82 |
+| RenewalRiskAgent | `renewal_pipeline_protected_usd` | $280,000 | 0.76 |
+| PipelineForecastAgent | `recoverable_quota_gap_usd` | $310,000 | 0.84 |
+
+### 3. Cost locked at write time
+
+Compute cost is computed once at execution and locked to the run record. Pricing changes
+do not retroactively alter historical cost. What a run cost is a fact, not a
+recalculation.
+
+### 4. Async quality scoring without blocking execution
+
+A `QualityJudgeAgent` scores every completed run across 4 dimensions — relevance,
+faithfulness, completeness, and actionability — without blocking task execution. Quality
+status (`PENDING` → `SCORED` or `FAILED`) is persisted with error detail. Silent quality
+degradation across runs is detectable.
+
+### 5. Dual-persona visibility into every run
+
+The same run data drives two views. The business view leads with financial outcome and
+risk narrative. The technical view leads with the run ledger, trace payload, token
+counts, and — for LangGraph workflow agents — the node execution graph. A guided demo
+mode walks through outcome → domain breakdown → evidence → quality scores → trace
+replay.
 
 ---
 
@@ -48,93 +102,58 @@ uses: risk mitigated, ARR protected, pipeline gap recovered.
 
 ![AgentOps Control Plane Architecture](docs/architecture/agentops-control-plane-architecture.svg)
 
-The platform is organized around explicit backend ownership boundaries: API
-submission, durable task execution, AgentOps governance, bounded observability,
-provider routing, and migration-gated persistence. Each layer has a single
-responsibility; agents do domain reasoning, while the control plane owns execution
-state, cost, quality, trace exposure, and outcome accounting.
-
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
 │  Experience Layer                                                   │
 │  React UI · Business view · Technical view · SSE live feed          │
-└────────────────────────────┬────────────────────────────────────────┘
-                             │ HTTP / SSE
-┌────────────────────────────▼────────────────────────────────────────┐
+└────────────────────────┬────────────────────────────────────────────┘
+                         │ HTTP / SSE
+┌────────────────────────▼────────────────────────────────────────────┐
 │  API Layer                                                          │
 │  FastAPI routers · bounded summaries · protected trace endpoint     │
-└────────────────────────────┬────────────────────────────────────────┘
-                             │ writes queued work
-┌────────────────────────────▼────────────────────────────────────────┐
+└────────────────────────┬────────────────────────────────────────────┘
+                         │ writes queued work
+┌────────────────────────▼────────────────────────────────────────────┐
 │  Durable Queue Layer                                                │
 │  Task rows · TaskWorker · stale claim recovery · retry metadata     │
-└────────────────────────────┬────────────────────────────────────────┘
-                             │ dispatch
-┌────────────────────────────▼────────────────────────────────────────┐
+└────────────────────────┬────────────────────────────────────────────┘
+                         │ dispatch
+┌────────────────────────▼────────────────────────────────────────────┐
 │  Orchestration Layer                                                │
-│  Agent Registry  ·  Single-shot agents  ·  LangGraph workflow      │
-└────────────────────────────┬────────────────────────────────────────┘
-                             │ run_context()
-┌────────────────────────────▼────────────────────────────────────────┐
+│  Agent Registry  ·  Single-shot agents  ·  LangGraph workflow       │
+└────────────────────────┬────────────────────────────────────────────┘
+                         │ run_context()
+┌────────────────────────▼────────────────────────────────────────────┐
 │  Control Plane  ◄── the enforcement boundary                        │
 │  AgentOpsManager · RunContext · cost lock · metrics · outcomes      │
 └──────────┬──────────────────┬──────────────────────┬────────────────┘
            │ complete()       │ writes               │ structured events
-┌──────────▼────────┐  ┌──────▼───────────────────┐  ┌▼───────────────┐
+┌──────────▼────────┐  ┌──────▼───────────────────┐   ┌▼───────────────┐
 │  Provider Layer   │  │  Data / Migration Layer   │  │ Observability  │
 │  Reusable clients │  │  Alembic-gated startup    │  │ SSE event IDs  │
-│  Ollama/Groq/Gemini│  │  SQLite · Postgres path   │  │ Quality status │
-└───────────────────┘  └──────────────────────────┘  └────────────────┘
+│  Ollama/Groq/Gemini│ │  SQLite · Postgres path   │  │ Quality status │
+└───────────────────┘  └────────────────────────── ┘   └────────────────┘
 ```
 
-### What each layer owns
+Each layer has a single responsibility. Agents do domain reasoning. The control plane
+owns execution state, cost, quality, trace exposure, and outcome accounting.
 
-**Experience** — Two persona-optimized views rendered from the same run data. Business
-view leads with financial outcome and risk narrative. Technical view leads with the run
-ledger, trace payload, token counts, and the LangGraph node graph. A guided demo mode
-walks an audience through the complete platform run: outcome first, then domain
-breakdown, evidence, quality scores, and trace replay.
-
-**API** — FastAPI with typed resource routers: Tasks (submit, batch, retry, status),
-Runs (paginated summaries plus a protected trace endpoint), Metrics (bounded cost,
-quality, latency, throughput windows), and Stream. Default run responses omit raw
-prompt/response data; `/runs/{run_id}/trace` is gated by `AGENTOPS_TRACE_API_KEY`
-when configured.
-
-**Durable queue** — The `tasks` table is the queue. Submitted work is persisted as
-`QUEUED` with `model_pricing_id`, retry lineage, attempt count, and recovery metadata.
-`TaskWorker` claims queued rows in bounded batches and requeues interrupted claims on
-startup.
-
-**Orchestration** — Agent Registry maps agent id to implementation. Single-shot agents
-and the LangGraph workflow agent (`ProjectPlanningAgent`) share one dispatch path. Retry
-chains preserve lineage via `retry_of` — the relationship between a failed run and its
-retry is a first-class data relationship, not a log entry.
-
-**Control Plane** — `AgentOpsManager.run_context()` is the enforcement boundary. Agents
-execute inside this context manager and populate exactly five fields. AgentOps owns
-everything else. This is not a convention — it is the only path agents have to the
-database.
-
-**Provider** — `LLMClient` exposes a single `complete()` method. Ollama, Groq, and
-Gemini each have an adapter behind it. Adapters reuse async HTTP clients, retry
-transient failures, resolve model aliases where supported, and close clients during app
-shutdown. Provider failures are recorded on `AgentRun` — they are never silent.
-
-**Data and operations** — Alembic owns schema changes. Startup validates the database is
-at the current migration head and does not create tables. SQLite is the local default,
-with an optional Postgres migration smoke path through
-`AGENTOPS_POSTGRES_TEST_DATABASE_URL` and `make postgres-migrate-smoke`.
-
-**Observability** — Structured SSE messages are serialized at the stream edge with
-event IDs. Session streams filter on payload fields rather than string fragments.
-Quality scoring records `PENDING`, `SCORED`, or `FAILED` with attempt count and error.
+| Layer | What it owns |
+|---|---|
+| **Experience** | Two persona-optimized views from the same run data. Business view: financial outcome and risk narrative. Technical view: run ledger, trace payload, token counts, LangGraph node graph. |
+| **API** | FastAPI with typed resource routers for Tasks, Runs, Metrics, and Stream. Raw trace data is omitted from default run responses; `/runs/{run_id}/trace` is gated by `AGENTOPS_TRACE_API_KEY`. |
+| **Durable queue** | The `tasks` table is the queue. Submitted work is persisted as `QUEUED` with pricing id, retry lineage, attempt count, and claim recovery metadata. `TaskWorker` requeues interrupted claims on startup. |
+| **Orchestration** | Agent Registry maps agent id to implementation. Single-shot and LangGraph workflow agents share one dispatch path. Retry chains preserve lineage via `retry_of` — a first-class data relationship, not a log entry. |
+| **Control plane** | `AgentOpsManager.run_context()` is the enforcement boundary. Agents populate their 5 fields. AgentOps writes everything else. |
+| **Provider** | `LLMClient.complete()` is the only interface to model providers. Ollama, Groq, and Gemini each have an adapter behind it. Provider failures are recorded on `AgentRun` — never silent. |
+| **Data/migration** | Alembic owns schema changes. Startup validates migration head and does not create tables. SQLite is the local default; optional Postgres smoke validation via `make postgres-migrate-smoke`. |
+| **Observability** | Structured SSE messages serialized with event IDs. Quality scoring records `PENDING`, `SCORED`, or `FAILED` with attempt count and error detail. |
 
 ---
 
 ## The AgentOps Contract
 
-The contract that makes observability enforced rather than aspirational:
+The boundary that makes observability enforced rather than aspirational:
 
 **Agents populate exactly 5 fields:**
 
@@ -157,7 +176,6 @@ The contract that makes observability enforced rather than aspirational:
 | Quality scoring and outcome attachment | After successful execution only |
 
 Agents do not write to the database. Agents do not manage their own lifecycle.
-A run is COMPLETE or FAILED. There is no third state.
 
 ---
 
@@ -193,15 +211,7 @@ Every agent run — single-shot or multi-node workflow — follows this governed
 | QualityJudgeAgent | Platform control | Async judge | Scores: relevance · faithfulness · completeness · actionability |
 
 Every formula produces a dollar-value output persisted to `BusinessOutcome` and linked
-to the `AgentRun` that produced it. A complete platform run across all agents produces
-a cross-domain outcome ledger. A representative run:
-
-| Agent | Outcome metric | Value | Confidence |
-|---|---|---|---|
-| SprintRiskAgent | `delivery_risk_mitigated_usd` | $15,000 | 0.70 |
-| ProjectPlanningAgent | `pipeline_confidence_gap_usd` | $120,000 | 0.82 |
-| RenewalRiskAgent | `renewal_pipeline_protected_usd` | $280,000 | 0.76 |
-| PipelineForecastAgent | `recoverable_quota_gap_usd` | $310,000 | 0.84 |
+to the `AgentRun` that produced it.
 
 ---
 
@@ -236,13 +246,12 @@ final plan and financial exposure.
 | Task | Durable work queue row. Domain, agent id, input payload, priority, queue status, pricing id, retry lineage, attempts, claim metadata. |
 | AgentRun | Core audit record. Prompt, response, tokens, cost, status, model, quality status/error, outcome link. |
 | AgentDefinition | Agent catalog. Agent id to implementation, domain, model default, quality rubric. |
-| ModelPricing | Cost lock. Active lookup is provider + model; referenced rows are expired and replaced instead of mutated. |
+| ModelPricing | Cost lock. Active lookup is provider + model; referenced rows are expired and replaced, never mutated. |
 | Metric | Time-series: `(ts, metric_name, metric_value, dimensions)`. Covers latency, cost, tokens, quality. |
 | BusinessOutcome | Financial impact ledger. One row per successful run, linked to Task and AgentRun. |
 
 `AgentRun` is the audit anchor. Governance, observability, retry lineage, quality scores,
-and financial outcomes all link to a single `AgentRun` row. Every outcome is auditable
-to its source run.
+and financial outcomes all link to a single row. Every outcome is auditable to its source run.
 
 ---
 
@@ -252,15 +261,15 @@ to its source run.
 |---|---|---|
 | RunContext boundary | Agents populate only their 5 fields | Enforced |
 | Durable task queue | Task rows store queue state, pricing, retry metadata, and claim recovery | Enforced |
-| Migration-gated startup | Alembic head is checked before serving; no runtime `create_all()` | Enforced |
+| Migration-gated startup | Alembic head checked before serving; no runtime `create_all()` | Enforced |
 | Cost locked at write time | Historical cost is fact, not estimate | Enforced |
-| Provider/model pricing | Active pricing is resolved by provider + model and duplicate active rows fail | Enforced |
+| Provider/model pricing | Active pricing resolved by provider + model; duplicate active rows fail | Enforced |
 | Provider lifecycle | Reusable clients, transient retries, close-on-shutdown | Enforced |
 | Protected trace access | Summary APIs omit raw traces; trace endpoint can require API key | Guardrail |
 | Quality async only | Judge never blocks task execution; failures persist quality status/error | Async |
 | Retry lineage | `retry_of` preserves relationship to original failed run | Linked |
 | SSE event stream | Structured `run_started`, `run_completed`, `quality_scored` events with IDs | Live |
-| Stale recovery | Stranded runs and interrupted task claims are recovered on startup | Guardrail |
+| Stale recovery | Stranded runs and interrupted task claims recovered on startup | Guardrail |
 | Backpressure cleanup | Stalled SSE subscribers removed automatically | Guardrail |
 
 ---
