@@ -299,7 +299,7 @@ the primary run action.
     Output: updated run evidence, domain breakdown, cost, quality, and business
     outcome totals.
 
-### B. Project Management Run
+### B. Project Management Domain Run
 
 A Project Management run uses the same pipeline with a smaller agent set and
 only Project Management scenario inputs.
@@ -394,6 +394,92 @@ only Project Management scenario inputs.
    Output: Project Management run progress, sprint risk evidence, allocation
    evidence, delivery forecast evidence, workflow trace summary, quality scores,
    cost, and financial impact.
+
+### C. Revenue Management Domain Run
+
+A Revenue Management run follows the same batch submission and task-worker
+pipeline, but it selects only Revenue Ops agents and only Revenue Management
+scenario inputs.
+
+1. `runSelectedScope()` reads `scopeAgentIds.revenue`.
+
+   Input:
+
+   ```ts
+   [
+     "agent-renewal-risk",
+     "agent-churn-signal",
+     "agent-pipeline-forecast",
+   ]
+   ```
+
+   Output: `submitAgents(agentIds, "Revenue Management", message)` is called.
+
+2. `submitAgents()` resolves payloads through `payloadForAgent(agentId)`.
+
+   Input by agent:
+
+   | Agent | Payload source |
+   |---|---|
+   | `agent-renewal-risk` | `currentRevenueScenario.payloads["agent-renewal-risk"]` |
+   | `agent-churn-signal` | `currentRevenueScenario.payloads["agent-churn-signal"]` |
+   | `agent-pipeline-forecast` | `currentRevenueScenario.payloads["agent-pipeline-forecast"]` |
+
+   Output: three `TaskSubmit` objects with the same `session_id` and
+   `priority = "HIGH"`.
+
+3. `POST /api/v1/tasks/batch` persists three durable task rows.
+
+   Backend input:
+
+   ```json
+   {
+     "tasks": [
+       {"agent_id": "agent-renewal-risk", "session_id": "session-id", "input_payload": {}, "priority": "HIGH"},
+       {"agent_id": "agent-churn-signal", "session_id": "session-id", "input_payload": {}, "priority": "HIGH"},
+       {"agent_id": "agent-pipeline-forecast", "session_id": "session-id", "input_payload": {}, "priority": "HIGH"}
+     ]
+   }
+   ```
+
+   Backend output: three `TaskSchema` rows in `QUEUED` status with
+   `domain = "REVENUE_OPS"` and task types from the persisted agent catalog.
+
+4. `TaskWorker` claims and executes the queued Revenue Management tasks.
+
+   Backend call path:
+
+   ```text
+   backend/app/agentops/task_queue.py::TaskWorker.process_once()
+   -> _claim_queued_tasks()
+   -> execute_tasks_concurrently()
+   -> execute_task()
+   -> AgentRegistry.get(agent_id).run()
+   -> backend/app/agents/base.py::BaseAgent.run()
+   ```
+
+   Output:
+
+   ```text
+   RenewalRiskAgent: renewal risk score and save actions
+   ChurnSignalAgent: early churn signals and intervention plan
+   PipelineForecastAgent: quota forecast and recoverable pipeline gap
+   AgentRun rows: COMPLETE or FAILED
+   BusinessOutcome rows: ARR protected, churn exposure reduced, or quota gap recovered
+   ```
+
+5. The UI updates Revenue Management evidence.
+
+   Calls:
+
+   ```http
+   GET /api/v1/runs?session_id=<session-id>
+   GET /api/v1/outcomes/session/<session-id>
+   ```
+
+   Output: Revenue Management run progress, account risk evidence, churn signal
+   evidence, pipeline forecast evidence, quality scores, cost, and financial
+   impact.
 
 Both run modes use `EventSource("/api/v1/stream/runs")` through `useSSE()`.
 The stream emits structured `run_started`, `run_completed`, and
