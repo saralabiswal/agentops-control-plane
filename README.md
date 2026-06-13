@@ -102,38 +102,6 @@ replay.
 
 ![AgentOps Control Plane Architecture](docs/architecture/agentops-control-plane-architecture.svg)
 
-```
-┌─────────────────────────────────────────────────────────────────────┐
-│  Experience Layer                                                   │
-│  React UI · Business view · Technical view · SSE live feed          │
-└────────────────────────┬────────────────────────────────────────────┘
-                         │ HTTP / SSE
-┌────────────────────────▼────────────────────────────────────────────┐
-│  API Layer                                                          │
-│  FastAPI routers · bounded summaries · protected trace endpoint     │
-└────────────────────────┬────────────────────────────────────────────┘
-                         │ writes queued work
-┌────────────────────────▼────────────────────────────────────────────┐
-│  Durable Queue Layer                                                │
-│  Task rows · TaskWorker · stale claim recovery · retry metadata     │
-└────────────────────────┬────────────────────────────────────────────┘
-                         │ dispatch
-┌────────────────────────▼────────────────────────────────────────────┐
-│  Orchestration Layer                                                │
-│  Agent Registry  ·  Single-shot agents  ·  LangGraph workflow       │
-└────────────────────────┬────────────────────────────────────────────┘
-                         │ run_context()
-┌────────────────────────▼────────────────────────────────────────────┐
-│  Control Plane  ◄── the enforcement boundary                        │
-│  AgentOpsManager · RunContext · cost lock · metrics · outcomes      │
-└──────────┬──────────────────┬──────────────────────┬────────────────┘
-           │ complete()       │ writes               │ structured events
-┌──────────▼────────┐  ┌──────▼───────────────────┐   ┌▼───────────────┐
-│  Provider Layer   │  │  Data / Migration Layer   │  │ Observability  │
-│  Reusable clients │  │  Alembic-gated startup    │  │ SSE event IDs  │
-│  Ollama/Groq/Gemini│ │  SQLite · Postgres path   │  │ Quality status │
-└───────────────────┘  └────────────────────────── ┘   └────────────────┘
-```
 
 Each layer has a single responsibility. Agents do domain reasoning. The control plane
 owns execution state, cost, quality, trace exposure, and outcome accounting.
